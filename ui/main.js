@@ -139,11 +139,15 @@ function buildServerArgs() {
   const args = [];
   const ctxSize = $("#opt-ctx-size").value.trim();
   const ngl = $("#opt-ngl").value.trim();
+  const batchSize = $("#opt-batch-size").value.trim();
+  const ubatchSize = $("#opt-ubatch-size").value.trim();
   const parallel = $("#opt-parallel").value.trim();
   const host = $("#opt-host").value.trim();
 
   if (ctxSize) { args.push("--ctx-size", ctxSize); }
   if (ngl) { args.push("--ngl", ngl); }
+  if (batchSize) { args.push("--batch-size", batchSize); }
+  if (ubatchSize) { args.push("--ubatch-size", ubatchSize); }
   if (parallel && parallel !== "1") { args.push("--parallel", parallel); }
   if (host && host !== "127.0.0.1") { args.push("--host", host); }
   if ($("#opt-flash-attn").checked) { args.push("--flash-attn"); }
