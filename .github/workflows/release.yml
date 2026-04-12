@@ -1,0 +1,108 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            arch: aarch64
+          - target: x86_64-apple-darwin
+            runner: macos-13
+            arch: x86_64
+
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-${{ matrix.target }}-cargo-
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli
+
+      - name: Build
+        run: cargo tauri build --target ${{ matrix.target }}
+
+      - name: Package
+        run: |
+          APP_DIR="src-tauri/target/${{ matrix.target }}/release/bundle/macos"
+          ARCHIVE="llama-panel-${{ github.ref_name }}-macos-${{ matrix.arch }}.tar.gz"
+          tar -czf "$ARCHIVE" -C "$APP_DIR" "llama-panel.app"
+          shasum -a 256 "$ARCHIVE" > "$ARCHIVE.sha256"
+          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}
+          path: |
+            llama-panel-*.tar.gz
+            llama-panel-*.tar.gz.sha256
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            llama-panel-*.tar.gz
+            llama-panel-*.tar.gz.sha256
+
+  update-homebrew:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Compute checksums
+        id: checksums
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "sha256_arm64=$(cat llama-panel-*-macos-aarch64.tar.gz.sha256 | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "sha256_x86_64=$(cat llama-panel-*-macos-x86_64.tar.gz.sha256 | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - name: Update Homebrew cask
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          repository: AlexsJones/homebrew-llama-panel
+          event-type: update-cask
+          client-payload: |
+            {
+              "version": "${{ steps.checksums.outputs.version }}",
+              "sha256_arm64": "${{ steps.checksums.outputs.sha256_arm64 }}",
+              "sha256_x86_64": "${{ steps.checksums.outputs.sha256_x86_64 }}"
+            }

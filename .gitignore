@@ -1,0 +1,4 @@
+/target
+/src-tauri/target
+node_modules
+*.DS_Store

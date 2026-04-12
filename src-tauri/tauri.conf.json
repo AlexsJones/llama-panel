@@ -1,0 +1,21 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-cli/config.schema.json",
+  "productName": "llama-panel",
+  "version": "0.1.0",
+  "identifier": "com.llamapanel.app",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "llama-panel",
+        "width": 1280,
+        "height": 860,
+        "minWidth": 900,
+        "minHeight": 600
+      }
+    ]
+  }
+}

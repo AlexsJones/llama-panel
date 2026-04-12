@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>llama-panel</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Connection Bar -->
+  <header id="connection-bar">
+    <div class="connection-group">
+      <label for="server-url">Server</label>
+      <input type="text" id="server-url" placeholder="http://localhost:8080" value="http://localhost:8080" />
+      <button id="btn-connect">Connect</button>
+      <span id="status-indicator" class="status-dot disconnected" title="Disconnected"></span>
+      <span id="status-text">Disconnected</span>
+    </div>
+    <button id="btn-refresh" class="icon-btn" title="Refresh server info" disabled>&#x21bb;</button>
+  </header>
+
+  <!-- Tab Navigation -->
+  <nav id="tabs">
+    <button class="tab active" data-tab="server">Server</button>
+    <button class="tab" data-tab="models">Models</button>
+    <button class="tab" data-tab="parameters">Parameters</button>
+    <button class="tab" data-tab="playground">Playground</button>
+  </nav>
+
+  <!-- Tab Content -->
+  <main id="content">
+
+    <!-- Server Tab -->
+    <section id="tab-server" class="tab-panel active">
+      <div class="panel-grid">
+        <div class="card wide">
+          <h2>Active Model</h2>
+          <div id="model-info" class="info-grid">
+            <p class="muted">No model information available</p>
+          </div>
+        </div>
+        <div class="card wide">
+          <h2>Launch Server</h2>
+          <p class="muted" style="margin-bottom: 0.75rem">
+            Start a new llama-server instance. Provide the path to the <code>llama-server</code> binary.
+          </p>
+          <div class="param-group">
+            <div class="param-row">
+              <label for="server-bin-path">Binary path</label>
+              <input type="text" class="param-val wide-input" id="server-bin-path" placeholder="/usr/local/bin/llama-server" />
+            </div>
+            <div class="param-row">
+              <label for="server-port">Port</label>
+              <input type="number" class="param-val" id="server-port" value="8080" style="width:90px" />
+            </div>
+            <div class="param-row">
+              <label for="server-extra-args">Extra args</label>
+              <input type="text" class="param-val wide-input" id="server-extra-args"
+                     placeholder="e.g. --ctx-size 4096 --ngl 99 --slots --props" />
+            </div>
+            <div class="param-row">
+              <label></label>
+              <button id="btn-start-server" class="primary-btn">Start Server</button>
+              <span id="server-launch-status" class="muted" style="margin-left:0.5rem"></span>
+            </div>
+          </div>
+        </div>
+        <div class="card wide">
+          <h2>Server Properties</h2>
+          <div id="props-info">
+            <p class="muted">No properties available (server may need --props flag)</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Models Tab -->
+    <section id="tab-models" class="tab-panel">
+      <div class="panel-grid">
+        <div class="card wide">
+          <h2>Load Model</h2>
+          <p class="muted" style="margin-bottom: 0.75rem">
+            Enter a local model path, model alias, or HuggingFace repo (e.g. <code>user/repo/file.gguf</code>).
+            HF models are auto-downloaded and cached. Server must be in router mode for hot-swap.
+          </p>
+          <div class="model-load-row">
+            <input type="text" id="model-load-input" placeholder="e.g. mistral-7b-q4.gguf or TheBloke/Mistral-7B-GGUF/mistral-7b.Q4_K_M.gguf" />
+            <button id="btn-load-model" class="primary-btn">Load</button>
+          </div>
+          <div id="model-load-status" class="muted" style="margin-top: 0.5rem"></div>
+        </div>
+        <div class="card wide">
+          <div class="card-header">
+            <h2>Available Models</h2>
+            <button id="btn-refresh-models" class="secondary-btn">Refresh</button>
+          </div>
+          <div id="models-list">
+            <p class="muted">Connect to a server to discover models</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Parameters Tab -->
+    <section id="tab-parameters" class="tab-panel">
+      <div class="panel-grid">
+        <div class="card">
+          <h2>Sampling</h2>
+          <div class="param-group">
+            <div class="param-row">
+              <label for="p-temperature">Temperature</label>
+              <input type="range" id="p-temperature" min="0" max="2" step="0.05" value="0.8" />
+              <input type="number" class="param-val" id="p-temperature-val" min="0" max="2" step="0.05" value="0.8" />
+            </div>
+            <div class="param-row">
+              <label for="p-top-k">Top-K</label>
+              <input type="range" id="p-top-k" min="0" max="200" step="1" value="40" />
+              <input type="number" class="param-val" id="p-top-k-val" min="0" max="200" step="1" value="40" />
+            </div>
+            <div class="param-row">
+              <label for="p-top-p">Top-P</label>
+              <input type="range" id="p-top-p" min="0" max="1" step="0.01" value="0.95" />
+              <input type="number" class="param-val" id="p-top-p-val" min="0" max="1" step="0.01" value="0.95" />
+            </div>
+            <div class="param-row">
+              <label for="p-min-p">Min-P</label>
+              <input type="range" id="p-min-p" min="0" max="1" step="0.01" value="0.05" />
+              <input type="number" class="param-val" id="p-min-p-val" min="0" max="1" step="0.01" value="0.05" />
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Penalties</h2>
+          <div class="param-group">
+            <div class="param-row">
+              <label for="p-repeat-penalty">Repeat Penalty</label>
+              <input type="range" id="p-repeat-penalty" min="0" max="2" step="0.05" value="1.1" />
+              <input type="number" class="param-val" id="p-repeat-penalty-val" min="0" max="2" step="0.05" value="1.1" />
+            </div>
+            <div class="param-row">
+              <label for="p-presence-penalty">Presence Penalty</label>
+              <input type="range" id="p-presence-penalty" min="-2" max="2" step="0.05" value="0" />
+              <input type="number" class="param-val" id="p-presence-penalty-val" min="-2" max="2" step="0.05" value="0" />
+            </div>
+            <div class="param-row">
+              <label for="p-frequency-penalty">Frequency Penalty</label>
+              <input type="range" id="p-frequency-penalty" min="-2" max="2" step="0.05" value="0" />
+              <input type="number" class="param-val" id="p-frequency-penalty-val" min="-2" max="2" step="0.05" value="0" />
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Generation</h2>
+          <div class="param-group">
+            <div class="param-row">
+              <label for="p-n-predict">Max Tokens</label>
+              <input type="range" id="p-n-predict" min="-1" max="4096" step="1" value="256" />
+              <input type="number" class="param-val" id="p-n-predict-val" min="-1" max="32768" step="1" value="256" />
+            </div>
+            <div class="param-row">
+              <label for="p-seed">Seed (-1 = random)</label>
+              <input type="number" class="param-val wide-input" id="p-seed" value="-1" />
+            </div>
+            <div class="param-row">
+              <label for="p-stop">Stop sequences</label>
+              <input type="text" class="param-val wide-input" id="p-stop" placeholder='e.g. ["\n", "User:"]' />
+            </div>
+            <div class="param-row">
+              <label for="p-cache-prompt">Cache prompt</label>
+              <input type="checkbox" id="p-cache-prompt" checked />
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Presets</h2>
+          <div class="preset-buttons">
+            <button class="preset-btn" data-preset="creative">Creative</button>
+            <button class="preset-btn" data-preset="balanced">Balanced</button>
+            <button class="preset-btn" data-preset="precise">Precise</button>
+            <button class="preset-btn" data-preset="deterministic">Deterministic</button>
+          </div>
+          <div class="param-group" style="margin-top: 1rem">
+            <button id="btn-load-defaults" class="secondary-btn">Load Server Defaults</button>
+            <button id="btn-reset-params" class="secondary-btn">Reset to Defaults</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Playground Tab -->
+    <section id="tab-playground" class="tab-panel">
+      <div class="playground-layout">
+        <div class="card playground-input">
+          <h2>Prompt</h2>
+          <div class="mode-toggle">
+            <button class="mode-btn active" data-mode="completion">Completion</button>
+            <button class="mode-btn" data-mode="chat">Chat</button>
+          </div>
+          <textarea id="prompt-input" placeholder="Enter your prompt here..."></textarea>
+          <div id="chat-system-row" style="display:none">
+            <label for="system-prompt">System prompt</label>
+            <textarea id="system-prompt" rows="2" placeholder="You are a helpful assistant."></textarea>
+          </div>
+          <div class="playground-actions">
+            <button id="btn-send" class="primary-btn" disabled>Send</button>
+            <span id="token-count" class="muted"></span>
+          </div>
+        </div>
+        <div class="card playground-output">
+          <h2>Response</h2>
+          <pre id="response-output"></pre>
+          <div id="response-meta" class="muted"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Persistent Slot Monitor Bar -->
+  <footer id="slot-bar">
+    <div class="slot-bar-header">
+      <span class="slot-bar-title">Slots</span>
+      <label class="slot-poll-toggle">
+        <input type="checkbox" id="slot-auto-poll" checked />
+        <span>Auto-refresh</span>
+      </label>
+    </div>
+    <div id="slot-bar-slots">
+      <span class="muted">Not connected</span>
+    </div>
+  </footer>
+
+  <script src="main.js"></script>
+</body>
+</html>
