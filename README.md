@@ -1,8 +1,12 @@
-# llama-panel
+<p align="center">
+  <img src="src-tauri/icons/icon.png" alt="llama-panel" width="128" />
+</p>
 
-A native macOS desktop app for managing and interacting with [llama-server](https://github.com/ggerganov/llama.cpp/tree/master/examples/server) instances. Built with [Tauri](https://tauri.app/).
+<h1 align="center">llama-panel</h1>
 
-<!-- ![screenshot](assets/screenshot.png) -->
+<p align="center">
+  A native macOS desktop app for managing and interacting with <a href="https://github.com/ggerganov/llama.cpp/tree/master/examples/server">llama-server</a> instances. Built with <a href="https://tauri.app/">Tauri</a>.
+</p>
 
 ## Features
 
