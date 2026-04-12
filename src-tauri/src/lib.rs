@@ -160,7 +160,10 @@ async fn unload_model(url: String, model: String) -> Result<serde_json::Value, S
 }
 
 #[tauri::command]
-async fn send_completion(url: String, body: serde_json::Value) -> Result<serde_json::Value, String> {
+async fn send_completion(
+    url: String,
+    body: serde_json::Value,
+) -> Result<serde_json::Value, String> {
     let url = url.trim_end_matches('/');
     let resp = client()
         .post(format!("{url}/completion"))
@@ -180,7 +183,10 @@ async fn send_completion(url: String, body: serde_json::Value) -> Result<serde_j
 }
 
 #[tauri::command]
-async fn send_chat_completion(url: String, body: serde_json::Value) -> Result<serde_json::Value, String> {
+async fn send_chat_completion(
+    url: String,
+    body: serde_json::Value,
+) -> Result<serde_json::Value, String> {
     let url = url.trim_end_matches('/');
     let resp = client()
         .post(format!("{url}/v1/chat/completions"))
