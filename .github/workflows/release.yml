@@ -93,7 +93,7 @@ jobs:
       - name: Update Homebrew cask
         uses: peter-evans/repository-dispatch@v3
         with:
-          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          token: ${{ secrets.HOMEBREW_PAT_TOKEN }}
           repository: AlexsJones/homebrew-llama-panel
           event-type: update-cask
           client-payload: |
