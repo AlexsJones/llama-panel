@@ -13,23 +13,13 @@ env:
 
 jobs:
   build:
-    strategy:
-      matrix:
-        include:
-          - target: aarch64-apple-darwin
-            runner: macos-latest
-            arch: aarch64
-          - target: x86_64-apple-darwin
-            runner: macos-latest
-            arch: x86_64
-
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
 
       - uses: actions/cache@v4
         with:
@@ -37,14 +27,14 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-${{ matrix.target }}-cargo-
+          key: ${{ runner.os }}-universal-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-universal-cargo-
 
       - name: Install Tauri CLI
         run: cargo install tauri-cli
 
-      - name: Build
-        run: cargo tauri build --target ${{ matrix.target }}
+      - name: Build universal macOS app
+        run: cargo tauri build --target universal-apple-darwin
 
       - name: Package
         run: |
@@ -52,18 +42,18 @@ jobs:
           if [ -z "$APP_BUNDLE" ]; then
             echo "ERROR: llama-panel.app not found"
             find target -name "*.app" -type d
+            find target -path "*/bundle/*" -type f | head -20
             exit 1
           fi
           APP_DIR=$(dirname "$APP_BUNDLE")
-          ARCHIVE="llama-panel-${{ github.ref_name }}-macos-${{ matrix.arch }}.tar.gz"
+          ARCHIVE="llama-panel-${{ github.ref_name }}-macos-universal.tar.gz"
           tar -czf "$ARCHIVE" -C "$APP_DIR" "llama-panel.app"
           shasum -a 256 "$ARCHIVE" > "$ARCHIVE.sha256"
-          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: macos-${{ matrix.arch }}
+          name: macos-universal
           path: |
             llama-panel-*.tar.gz
             llama-panel-*.tar.gz.sha256
@@ -96,9 +86,9 @@ jobs:
         id: checksums
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
+          SHA256=$(cat llama-panel-*-macos-universal.tar.gz.sha256 | awk '{print $1}')
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "sha256_arm64=$(cat llama-panel-*-macos-aarch64.tar.gz.sha256 | awk '{print $1}')" >> "$GITHUB_OUTPUT"
-          echo "sha256_x86_64=$(cat llama-panel-*-macos-x86_64.tar.gz.sha256 | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
 
       - name: Update Homebrew cask
         uses: peter-evans/repository-dispatch@v3
@@ -109,6 +99,5 @@ jobs:
           client-payload: |
             {
               "version": "${{ steps.checksums.outputs.version }}",
-              "sha256_arm64": "${{ steps.checksums.outputs.sha256_arm64 }}",
-              "sha256_x86_64": "${{ steps.checksums.outputs.sha256_x86_64 }}"
+              "sha256": "${{ steps.checksums.outputs.sha256 }}"
             }
