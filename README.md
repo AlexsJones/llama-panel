@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="demo.gif" alt="llama-panel demo" width="720" />
+  <img src="demo0.png" alt="llama-panel demo" width="720" />
 </p>
 
 ## Features

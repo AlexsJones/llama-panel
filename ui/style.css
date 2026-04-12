@@ -612,6 +612,140 @@ input[type="checkbox"] {
 .model-status-badge.available { background: rgba(99,102,241,0.15); color: var(--accent); }
 .model-status-badge.loading { background: rgba(234,179,8,0.15); color: var(--yellow); }
 
+/* ── Slot Details Pane ───────────────────────────────────────────── */
+#slot-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.slot-detail-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.75rem;
+  transition: border-color 0.3s;
+}
+
+.slot-detail-card.processing {
+  border-color: var(--yellow);
+}
+
+.slot-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.slot-detail-id {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.slot-detail-state {
+  padding: 0.1rem 0.45rem;
+  border-radius: 3px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.slot-detail-state.idle {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--green);
+}
+
+.slot-detail-state.processing {
+  background: rgba(234, 179, 8, 0.15);
+  color: var(--yellow);
+}
+
+.slot-detail-tps {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.slot-detail-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.15rem 0.75rem;
+  font-size: 0.75rem;
+}
+
+.slot-stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0.1rem 0;
+}
+
+.slot-stat-key {
+  color: var(--text-muted);
+}
+
+.slot-stat-val {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--text);
+}
+
+.slot-kv-bar {
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  margin-top: 0.35rem;
+  overflow: hidden;
+}
+
+.slot-kv-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 0.5s ease;
+}
+
+.slot-kv-fill.warn {
+  background: var(--yellow);
+}
+
+.slot-kv-fill.crit {
+  background: var(--red);
+}
+
+.slot-detail-summary {
+  display: flex;
+  gap: 1rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.75rem;
+  margin-bottom: 0.25rem;
+}
+
+.slot-summary-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.slot-summary-label {
+  color: var(--text-muted);
+}
+
+.slot-summary-val {
+  font-family: var(--mono);
+  font-weight: 600;
+  color: var(--text);
+}
+
 /* ── Persistent Slot Monitor Bar ─────────────────────────────────── */
 #slot-bar {
   position: fixed;
@@ -802,6 +936,103 @@ input[type="checkbox"] {
   margin-top: 0.5rem;
   font-family: var(--mono);
   font-size: 0.75rem;
+}
+
+/* ── Modal ────────────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(2px);
+}
+
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  width: 90%;
+  max-width: 720px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-header h2 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 0;
+}
+
+.modal-header .icon-btn {
+  font-size: 1.3rem;
+  width: 32px;
+  height: 32px;
+}
+
+#template-editor {
+  flex: 1;
+  min-height: 300px;
+  margin: 1rem 1.25rem;
+  padding: 0.75rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  line-height: 1.6;
+  resize: none;
+  white-space: pre;
+  overflow: auto;
+  tab-size: 2;
+}
+
+#template-editor:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.modal-footer {
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+/* Chat template button in props */
+.template-view-btn {
+  padding: 0.2rem 0.6rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.template-view-btn:hover {
+  border-color: var(--accent);
+  background: rgba(99, 102, 241, 0.08);
 }
 
 /* Scrollbar */

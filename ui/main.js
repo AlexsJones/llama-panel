@@ -111,6 +111,7 @@ async function doConnect() {
     connected = true;
     serverProps = result.props || {};
     setStatus("connected", "Connected");
+    btnConnect.textContent = "Connected";
     btnRefresh.disabled = false;
     $("#btn-send").disabled = false;
 
@@ -123,6 +124,7 @@ async function doConnect() {
   } catch (e) {
     connected = false;
     setStatus("disconnected", `Failed: ${e}`);
+    btnConnect.textContent = "Connect";
     btnRefresh.disabled = true;
     $("#btn-send").disabled = true;
   } finally {
@@ -285,7 +287,7 @@ function renderProps(p) {
   html += `<span class="props-k">Total Slots</span><span class="props-v">${p.total_slots ?? "N/A"}</span>`;
   html += `<span class="props-k">Build</span><span class="props-v">${escapeHtml(p.build_info ?? "N/A")}</span>`;
   if (p.chat_template) {
-    html += `<span class="props-k">Chat Template</span><span class="props-v props-template" title="${escapeHtml(p.chat_template)}">${escapeHtml(truncate(p.chat_template, 200))}</span>`;
+    html += `<span class="props-k">Chat Template</span><span class="props-v"><button class="template-view-btn" id="btn-view-template">View / Edit</button></span>`;
   }
   html += `</div>`;
 
@@ -318,11 +320,40 @@ function renderProps(p) {
   }
 
   el.innerHTML = html;
+
+  // Wire up template button after rendering
+  const templateBtn = $("#btn-view-template");
+  if (templateBtn && p.chat_template) {
+    templateBtn.addEventListener("click", () => openTemplateModal(p.chat_template));
+  }
 }
 
-function truncate(s, n) {
-  return s.length > n ? s.slice(0, n) + "..." : s;
+// ── Chat Template Modal ──────────────────────────────────────────
+function openTemplateModal(template) {
+  const modal = $("#template-modal");
+  const editor = $("#template-editor");
+  editor.value = template;
+  modal.style.display = "flex";
+  editor.focus();
 }
+
+function closeTemplateModal() {
+  $("#template-modal").style.display = "none";
+}
+
+$("#template-modal-close").addEventListener("click", closeTemplateModal);
+
+// Close on overlay click (but not modal body)
+$("#template-modal").addEventListener("click", (e) => {
+  if (e.target === e.currentTarget) closeTemplateModal();
+});
+
+// Close on Escape
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && $("#template-modal").style.display === "flex") {
+    closeTemplateModal();
+  }
+});
 
 // ── Sync server settings into UI controls ─────────────────────────
 function syncServerSettings(props) {
@@ -656,18 +687,25 @@ function stopSlotPolling() {
 async function refreshSlotBar() {
   if (!serverUrl || !connected) return;
   const container = $("#slot-bar-slots");
+  const detailPane = $("#slot-details");
 
   try {
     const slots = await invoke("get_slots", { url: serverUrl });
+
+    // Log raw slot data so you can inspect all available fields
+    console.log("[slot-details] raw /slots response:", slots);
+
     if (!Array.isArray(slots) || slots.length === 0) {
       container.innerHTML = `<span class="muted">No slots (--slots flag needed)</span>`;
+      if (detailPane) detailPane.innerHTML = `<p class="muted">No slots (server may need --slots flag)</p>`;
       return;
     }
 
+    // ── Footer slot pills (unchanged) ──
     container.innerHTML = slots.map((s) => {
       const processing = s.is_processing;
       const state = processing ? "processing" : "idle";
-      const decoded = s.next_token?.n_decoded ?? 0;
+      const decoded = s.next_token?.n_decoded ?? s.n_decoded ?? 0;
       const ctx = s.n_ctx ?? "?";
 
       return `
@@ -677,9 +715,70 @@ async function refreshSlotBar() {
           <span class="slot-pill-detail">${decoded}/${ctx}</span>
         </div>`;
     }).join("");
+
+    // ── Slot Details pane ──
+    if (!detailPane) return;
+
+    const totalSlots = slots.length;
+    const busySlots = slots.filter((s) => s.is_processing).length;
+    const idleSlots = totalSlots - busySlots;
+
+    let html = `<div class="slot-detail-summary">
+      <div class="slot-summary-item"><span class="slot-summary-label">Total</span><span class="slot-summary-val">${totalSlots}</span></div>
+      <div class="slot-summary-item"><span class="slot-summary-label">Idle</span><span class="slot-summary-val" style="color:var(--green)">${idleSlots}</span></div>
+      <div class="slot-summary-item"><span class="slot-summary-label">Busy</span><span class="slot-summary-val" style="color:var(--yellow)">${busySlots}</span></div>
+    </div>`;
+
+    html += slots.map((s) => {
+      const processing = s.is_processing;
+      const state = processing ? "processing" : "idle";
+      const decoded = s.next_token?.n_decoded ?? s.n_decoded ?? 0;
+      const ctx = s.n_ctx ?? 0;
+      const nPast = s.n_past ?? 0;
+      const nRemaining = s.n_remaining ?? 0;
+
+      // Tok/s — llama.cpp may expose this in different fields
+      const tps = s.tokens_per_second ?? s.t_token_generation_per_second ?? null;
+      const promptTps = s.prompt_tokens_per_second ?? s.t_prompt_processing_per_second ?? null;
+
+      // KV cache utilization
+      const kvPct = ctx > 0 ? ((nPast / ctx) * 100) : 0;
+      const kvClass = kvPct > 90 ? "crit" : kvPct > 70 ? "warn" : "";
+
+      let statsHtml = "";
+      statsHtml += slotStat("Decoded", decoded);
+      statsHtml += slotStat("Remaining", nRemaining || "-");
+      statsHtml += slotStat("KV cache", ctx > 0 ? `${nPast}/${ctx}` : "-");
+      if (promptTps != null) statsHtml += slotStat("Prompt", `${promptTps.toFixed(1)} t/s`);
+
+      // Show generation timing if available
+      const tGen = s.t_token_generation ?? null;
+      const tPrompt = s.t_prompt_processing ?? null;
+      if (tGen != null) statsHtml += slotStat("Gen time", `${(tGen / 1000).toFixed(1)}s`);
+      if (tPrompt != null) statsHtml += slotStat("Prompt time", `${(tPrompt / 1000).toFixed(1)}s`);
+
+      const tpsDisplay = tps != null ? `${tps.toFixed(1)} t/s` : (processing ? "..." : "-");
+
+      return `<div class="slot-detail-card ${state}">
+        <div class="slot-detail-header">
+          <span class="slot-detail-id">Slot ${s.id}</span>
+          <span class="slot-detail-state ${state}">${state}</span>
+          <span class="slot-detail-tps">${tpsDisplay}</span>
+        </div>
+        <div class="slot-detail-stats">${statsHtml}</div>
+        <div class="slot-kv-bar"><div class="slot-kv-fill ${kvClass}" style="width:${kvPct.toFixed(1)}%"></div></div>
+      </div>`;
+    }).join("");
+
+    detailPane.innerHTML = html;
   } catch {
     container.innerHTML = `<span class="muted">Slots unavailable</span>`;
+    if (detailPane) detailPane.innerHTML = `<p class="muted">Slots unavailable</p>`;
   }
+}
+
+function slotStat(label, value) {
+  return `<div class="slot-stat"><span class="slot-stat-key">${label}</span><span class="slot-stat-val">${value}</span></div>`;
 }
 
 // ── Playground ─────────────────────────────────────────────────────

@@ -33,10 +33,16 @@
     <!-- Server Tab -->
     <section id="tab-server" class="tab-panel active">
       <div class="panel-grid">
-        <div class="card wide">
+        <div class="card">
           <h2>Active Model</h2>
           <div id="model-info" class="info-grid">
             <p class="muted">No model information available</p>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Slot Details</h2>
+          <div id="slot-details">
+            <p class="muted">Connect to see slot activity</p>
           </div>
         </div>
         <div class="card wide">
@@ -335,6 +341,20 @@
       <span class="muted">Not connected</span>
     </div>
   </footer>
+
+  <!-- Chat Template Modal -->
+  <div id="template-modal" class="modal-overlay" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Chat Template</h2>
+        <button id="template-modal-close" class="icon-btn" title="Close">&times;</button>
+      </div>
+      <textarea id="template-editor" spellcheck="false"></textarea>
+      <div class="modal-footer">
+        <span id="template-modal-status" class="muted"></span>
+      </div>
+    </div>
+  </div>
 
   <script src="main.js"></script>
 </body>
