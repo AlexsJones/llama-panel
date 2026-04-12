@@ -18,10 +18,20 @@ A native macOS desktop app for managing and interacting with [llama-server](http
 ### Homebrew (recommended)
 
 ```bash
-brew install AlexsJones/llama-panel/llama-panel
+brew tap AlexsJones/llama-panel
+brew install llama-panel
 ```
 
-This installs the `.app` bundle to `/Applications` and a `llama-panel` CLI launcher.
+This installs the `.app` bundle to `/Applications` and a `llama-panel` command on your `PATH`.
+
+### Download from GitHub Releases
+
+Grab the latest `.tar.gz` from [Releases](https://github.com/AlexsJones/llama-panel/releases), extract it, and drag `llama-panel.app` to `/Applications`:
+
+```bash
+tar -xzf llama-panel-v*.tar.gz
+mv llama-panel.app /Applications/
+```
 
 ### From source
 
@@ -32,7 +42,7 @@ cargo install tauri-cli
 cargo tauri build
 ```
 
-The `.app` bundle will be in `src-tauri/target/release/bundle/macos/`.
+The `.app` bundle will be in `target/release/bundle/macos/`.
 
 ## Usage
 
