@@ -91,7 +91,11 @@
             </div>
             <div class="param-row">
               <label for="hf-repo-input">HF model</label>
-              <input type="text" class="param-val wide-input" id="hf-repo-input" placeholder="e.g. ggml-org/gemma-3-1b-it-GGUF" />
+              <div class="hf-search-wrapper">
+                <input type="text" class="param-val wide-input" id="hf-repo-input"
+                       placeholder="Search HuggingFace models..." autocomplete="off" />
+                <div id="hf-search-results" class="hf-search-dropdown"></div>
+              </div>
             </div>
             <div class="param-row">
               <label for="hf-port">Port</label>

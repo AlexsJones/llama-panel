@@ -269,6 +269,36 @@ async fn start_server_hf(
     ))
 }
 
+/// Search HuggingFace for GGUF models
+#[tauri::command]
+async fn search_hf_models(query: String) -> Result<serde_json::Value, String> {
+    let url = format!(
+        "https://huggingface.co/api/models?search={}&filter=gguf&sort=downloads&direction=-1&limit=8",
+        urlencoded(&query)
+    );
+    client()
+        .get(&url)
+        .timeout(Duration::from_secs(8))
+        .send()
+        .await
+        .map_err(|e| format!("HF search failed: {e}"))?
+        .json()
+        .await
+        .map_err(|e| format!("Invalid response: {e}"))
+}
+
+fn urlencoded(s: &str) -> String {
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
+            b' ' => "+".to_string(),
+            _ => format!("%{:02X}", b),
+        })
+        .collect()
+}
+
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
@@ -282,6 +312,7 @@ pub fn run() {
             unload_model,
             start_server,
             start_server_hf,
+            search_hf_models,
             send_completion,
             send_chat_completion,
             tokenize,

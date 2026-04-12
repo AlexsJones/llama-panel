@@ -318,10 +318,85 @@ $("#btn-reset-params").addEventListener("click", () => applyPreset(PRESETS.balan
 $("#btn-hf-download").addEventListener("click", startHfModel);
 $("#hf-repo-input").addEventListener("keydown", (e) => { if (e.key === "Enter") startHfModel(); });
 
+// ── HF Live Search ────────────────────────────────────────────────
+let hfSearchTimer = null;
+const hfInput = $("#hf-repo-input");
+const hfDropdown = $("#hf-search-results");
+
+hfInput.addEventListener("input", () => {
+  clearTimeout(hfSearchTimer);
+  const query = hfInput.value.trim();
+  if (query.length < 2) {
+    hfDropdown.innerHTML = "";
+    hfDropdown.style.display = "none";
+    return;
+  }
+  hfSearchTimer = setTimeout(() => searchHfModels(query), 300);
+});
+
+hfInput.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    hfDropdown.style.display = "none";
+  }
+});
+
+// Close dropdown on outside click
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".hf-search-wrapper")) {
+    hfDropdown.style.display = "none";
+  }
+});
+
+async function searchHfModels(query) {
+  try {
+    const results = await invoke("search_hf_models", { query });
+    if (!Array.isArray(results) || results.length === 0) {
+      hfDropdown.innerHTML = `<div class="hf-search-empty">No GGUF models found</div>`;
+      hfDropdown.style.display = "block";
+      return;
+    }
+
+    hfDropdown.innerHTML = results.map((m) => {
+      const id = m.id || m.modelId;
+      const downloads = m.downloads ? formatCount(m.downloads) : "0";
+      const likes = m.likes || 0;
+      const tag = m.pipeline_tag || "";
+      return `<div class="hf-search-item" data-repo="${escapeHtml(id)}">
+        <div class="hf-search-item-name">${escapeHtml(id)}</div>
+        <div class="hf-search-item-meta">
+          <span title="Downloads">${downloads} DL</span>
+          <span title="Likes">${likes} ♥</span>
+          ${tag ? `<span>${tag}</span>` : ""}
+        </div>
+      </div>`;
+    }).join("");
+
+    hfDropdown.style.display = "block";
+
+    // Click to select
+    hfDropdown.querySelectorAll(".hf-search-item").forEach((item) => {
+      item.addEventListener("click", () => {
+        hfInput.value = item.dataset.repo;
+        hfDropdown.style.display = "none";
+      });
+    });
+  } catch {
+    hfDropdown.innerHTML = `<div class="hf-search-empty">Search failed</div>`;
+    hfDropdown.style.display = "block";
+  }
+}
+
+function formatCount(n) {
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
+  return String(n);
+}
+
 // Suggestion chips fill the repo input
 document.querySelectorAll(".hf-suggestion-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
-    $("#hf-repo-input").value = btn.dataset.repo;
+    hfInput.value = btn.dataset.repo;
+    hfDropdown.style.display = "none";
   });
 });
 
