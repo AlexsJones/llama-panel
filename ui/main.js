@@ -117,6 +117,7 @@ async function doConnect() {
     renderHealthStatus(result.health);
     renderModels(result.models);
     renderProps(result.props);
+    syncServerSettings(result.props);
     startSlotPolling();
     refreshModelsList();
   } catch (e) {
@@ -321,6 +322,27 @@ function renderProps(p) {
 
 function truncate(s, n) {
   return s.length > n ? s.slice(0, n) + "..." : s;
+}
+
+// ── Sync server settings into UI controls ─────────────────────────
+function syncServerSettings(props) {
+  if (!props || Object.keys(props).length === 0) return;
+
+  const defaults = props.default_generation_settings || {};
+
+  // Populate parameter sliders from server defaults
+  if (defaults.temperature !== undefined) setParam("temperature", defaults.temperature);
+  if (defaults.top_k !== undefined) setParam("top-k", defaults.top_k);
+  if (defaults.top_p !== undefined) setParam("top-p", defaults.top_p);
+  if (defaults.min_p !== undefined) setParam("min-p", defaults.min_p);
+  if (defaults.repeat_penalty !== undefined) setParam("repeat-penalty", defaults.repeat_penalty);
+  if (defaults.presence_penalty !== undefined) setParam("presence-penalty", defaults.presence_penalty);
+  if (defaults.frequency_penalty !== undefined) setParam("frequency-penalty", defaults.frequency_penalty);
+  if (defaults.n_predict !== undefined && defaults.n_predict > 0) setParam("n-predict", defaults.n_predict);
+
+  // Populate server launch options from what we can detect
+  if (defaults.n_ctx !== undefined) $("#opt-ctx-size").value = defaults.n_ctx;
+  if (props.total_slots !== undefined) $("#opt-parallel").value = props.total_slots;
 }
 
 // ── Load Defaults button ───────────────────────────────────────────
