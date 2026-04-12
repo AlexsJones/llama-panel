@@ -9,6 +9,10 @@
 </p>
 
 <p align="center">
+  <img src="demo.gif" alt="llama-panel demo" width="720" />
+</p>
+
+<p align="center">
   <img src="demo0.png" alt="Server configuration" width="720" />
 </p>
 
