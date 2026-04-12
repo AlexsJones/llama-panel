@@ -34,7 +34,7 @@ jobs:
         run: cargo install tauri-cli
 
       - name: Build universal macOS app
-        run: cargo tauri build --target universal-apple-darwin
+        run: cargo tauri build --target universal-apple-darwin --bundles app
 
       - name: Package
         run: |
