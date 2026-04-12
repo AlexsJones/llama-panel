@@ -645,6 +645,8 @@ document.querySelectorAll(".mode-btn").forEach((btn) => {
 
 $("#btn-send").addEventListener("click", sendPrompt);
 
+let abortGeneration = false;
+
 async function sendPrompt() {
   if (!serverUrl || !connected) return;
 
@@ -652,13 +654,15 @@ async function sendPrompt() {
   if (!promptText) return;
 
   const btnSend = $("#btn-send");
+  const btnCancel = $("#btn-cancel");
   const output = $("#response-output");
   const meta = $("#response-meta");
 
-  btnSend.disabled = true;
-  btnSend.textContent = "Generating...";
+  btnSend.style.display = "none";
+  btnCancel.style.display = "inline-block";
+  abortGeneration = false;
   output.textContent = "";
-  meta.textContent = "";
+  meta.textContent = "Waiting for server...";
 
   const params = getParams();
   const startTime = performance.now();
@@ -716,10 +720,17 @@ async function sendPrompt() {
   } catch (e) {
     output.textContent = `Error: ${e}`;
   } finally {
-    btnSend.disabled = false;
-    btnSend.textContent = "Send";
+    btnSend.style.display = "inline-block";
+    btnCancel.style.display = "none";
   }
 }
+
+$("#btn-cancel").addEventListener("click", () => {
+  abortGeneration = true;
+  $("#response-meta").textContent = "Cancelled";
+  $("#btn-send").style.display = "inline-block";
+  $("#btn-cancel").style.display = "none";
+});
 
 // Ctrl+Enter to send
 $("#prompt-input").addEventListener("keydown", (e) => {

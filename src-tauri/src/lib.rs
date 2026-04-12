@@ -165,10 +165,12 @@ async fn send_completion(
     body: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     let url = url.trim_end_matches('/');
-    let resp = client()
+    let resp = reqwest::Client::builder()
+        .timeout(Duration::from_secs(600))
+        .build()
+        .unwrap()
         .post(format!("{url}/completion"))
         .json(&body)
-        .timeout(Duration::from_secs(120))
         .send()
         .await
         .map_err(|e| format!("Request failed: {e}"))?;
@@ -188,10 +190,12 @@ async fn send_chat_completion(
     body: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     let url = url.trim_end_matches('/');
-    let resp = client()
+    let resp = reqwest::Client::builder()
+        .timeout(Duration::from_secs(600))
+        .build()
+        .unwrap()
         .post(format!("{url}/v1/chat/completions"))
         .json(&body)
-        .timeout(Duration::from_secs(300))
         .send()
         .await
         .map_err(|e| format!("Request failed: {e}"))?;
