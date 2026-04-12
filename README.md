@@ -12,22 +12,41 @@
   <img src="demo.gif" alt="llama-panel demo" width="720" />
 </p>
 
+## Features
+
+- **Launch & configure** llama-server with a full options panel -- context size, GPU layers, parallel slots, flash attention, and more
+- **Download models from HuggingFace** directly from the app with live search-as-you-type
+- **Browse loaded & available models** on the server, load/unload on the fly in router mode
+- **Tune parameters** with interactive sliders and presets (Creative, Balanced, Precise, Deterministic)
+- **Playground** for completions and chat with performance metrics
+- **Slot monitor** with real-time polling
+
+## Server Configuration
+
+Configure and launch llama-server instances with dedicated controls for all common options -- no need to remember CLI flags.
+
 <p align="center">
   <img src="demo0.png" alt="Server configuration" width="720" />
 </p>
+
+- **Context & Memory** -- context size, GPU layers, flash attention
+- **Slots & Parallelism** -- parallel slots, slot monitoring, continuous batching
+- **Endpoints & API** -- expose properties, enable metrics, listen host
+- Connect to an existing server or launch a new one and auto-connect
+
+## Model Management
+
+Search HuggingFace for GGUF models and start a server with one click. Browse models already loaded on the server, or load/unload them in router mode.
 
 <p align="center">
   <img src="demo1.png" alt="HuggingFace model download" width="720" />
 </p>
 
-## Features
-
-- **Connect** to any running llama-server instance
-- **Launch** new llama-server processes with custom arguments
-- **Load / unload models** on the fly (router mode)
-- **Tune parameters** with interactive sliders and presets (Creative, Balanced, Precise, Deterministic)
-- **Playground** for completions and chat with live token counts and performance metrics
-- **Slot monitor** with real-time polling
+- **Live search** -- type to search HuggingFace for GGUF models, see download counts and likes
+- **One-click download & start** -- select a model, hit "Download & Start", and auto-connect when ready
+- **Popular model suggestions** -- quick-pick chips for Gemma, Qwen, Llama, Mistral, Phi, and more
+- **Available models list** -- see all loaded and available models on the server with status badges
+- **Router mode** -- load and unload models dynamically without restarting the server
 
 ## Install
 
@@ -62,30 +81,11 @@ The `.app` bundle will be in `target/release/bundle/macos/`.
 
 ## Usage
 
-### GUI
-
-Launch from Spotlight, the Applications folder, or:
+Launch from Spotlight, the Applications folder, or the command line:
 
 ```bash
 llama-panel
 ```
-
-### Connecting to a server
-
-1. Enter the llama-server URL (default `http://localhost:8080`)
-2. Click **Connect**
-
-### Launching a server
-
-On the **Server** tab, provide the path to your `llama-server` binary, choose a port, and add any extra arguments:
-
-```
---ctx-size 4096 --ngl 99 --slots --props
-```
-
-### Router mode
-
-When your server supports router mode, use the **Models** tab to load and unload models dynamically. Supports local paths, model aliases, and HuggingFace repos (auto-downloaded).
 
 ## Development
 
