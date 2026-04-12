@@ -36,7 +36,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            src-tauri/target
+            target
           key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-${{ matrix.target }}-cargo-
 
@@ -48,10 +48,10 @@ jobs:
 
       - name: Package
         run: |
-          APP_BUNDLE=$(find src-tauri/target -name "llama-panel.app" -type d | head -1)
+          APP_BUNDLE=$(find target -name "llama-panel.app" -type d | head -1)
           if [ -z "$APP_BUNDLE" ]; then
             echo "ERROR: llama-panel.app not found"
-            find src-tauri/target -name "*.app" -type d
+            find target -name "*.app" -type d
             exit 1
           fi
           APP_DIR=$(dirname "$APP_BUNDLE")
