@@ -135,10 +135,33 @@ function setStatus(state, text) {
 }
 
 // ── Server Launch ──────────────────────────────────────────────────
+function buildServerArgs() {
+  const args = [];
+  const ctxSize = $("#opt-ctx-size").value.trim();
+  const ngl = $("#opt-ngl").value.trim();
+  const parallel = $("#opt-parallel").value.trim();
+  const host = $("#opt-host").value.trim();
+
+  if (ctxSize) { args.push("--ctx-size", ctxSize); }
+  if (ngl) { args.push("--ngl", ngl); }
+  if (parallel && parallel !== "1") { args.push("--parallel", parallel); }
+  if (host && host !== "127.0.0.1") { args.push("--host", host); }
+  if ($("#opt-flash-attn").checked) { args.push("--flash-attn"); }
+  if ($("#opt-slots").checked) { args.push("--slots"); }
+  if ($("#opt-cont-batch").checked) { args.push("--cont-batching"); }
+  if ($("#opt-props").checked) { args.push("--props"); }
+  if ($("#opt-metrics").checked) { args.push("--metrics"); }
+
+  const extra = $("#server-extra-args").value.trim();
+  if (extra) { args.push(extra); }
+
+  return args.join(" ");
+}
+
 $("#btn-start-server").addEventListener("click", async () => {
   const bin = $("#server-bin-path").value.trim();
   const port = $("#server-port").value.trim() || "8080";
-  const extraArgs = $("#server-extra-args").value.trim();
+  const extraArgs = buildServerArgs();
 
   if (!bin) {
     $("#server-launch-status").textContent = "Please enter the path to llama-server binary";

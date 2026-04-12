@@ -53,10 +53,63 @@
               <label for="server-port">Port</label>
               <input type="number" class="param-val" id="server-port" value="8080" style="width:90px" />
             </div>
+          </div>
+
+          <div class="server-opts-grid">
+            <div class="server-opt-section">
+              <div class="server-opt-title">Context &amp; Memory</div>
+              <div class="param-row">
+                <label for="opt-ctx-size">Context size</label>
+                <input type="number" class="param-val" id="opt-ctx-size" value="4096" style="width:90px" />
+              </div>
+              <div class="param-row">
+                <label for="opt-ngl">GPU layers</label>
+                <input type="number" class="param-val" id="opt-ngl" value="99" style="width:90px" />
+              </div>
+              <div class="param-row">
+                <label for="opt-flash-attn">Flash attention</label>
+                <input type="checkbox" id="opt-flash-attn" checked />
+              </div>
+            </div>
+
+            <div class="server-opt-section">
+              <div class="server-opt-title">Slots &amp; Parallelism</div>
+              <div class="param-row">
+                <label for="opt-parallel">Parallel slots</label>
+                <input type="number" class="param-val" id="opt-parallel" value="1" min="1" style="width:90px" />
+              </div>
+              <div class="param-row">
+                <label for="opt-slots">Enable slot monitoring</label>
+                <input type="checkbox" id="opt-slots" checked />
+              </div>
+              <div class="param-row">
+                <label for="opt-cont-batch">Continuous batching</label>
+                <input type="checkbox" id="opt-cont-batch" checked />
+              </div>
+            </div>
+
+            <div class="server-opt-section">
+              <div class="server-opt-title">Endpoints &amp; API</div>
+              <div class="param-row">
+                <label for="opt-props">Expose properties</label>
+                <input type="checkbox" id="opt-props" checked />
+              </div>
+              <div class="param-row">
+                <label for="opt-metrics">Enable metrics</label>
+                <input type="checkbox" id="opt-metrics" />
+              </div>
+              <div class="param-row">
+                <label for="opt-host">Listen host</label>
+                <input type="text" class="param-val" id="opt-host" value="127.0.0.1" style="width:120px" />
+              </div>
+            </div>
+          </div>
+
+          <div class="param-group" style="margin-top: 0.75rem">
             <div class="param-row">
               <label for="server-extra-args">Extra args</label>
               <input type="text" class="param-val wide-input" id="server-extra-args"
-                     placeholder="e.g. --ctx-size 4096 --ngl 99 --slots --props" />
+                     placeholder="Any additional flags..." />
             </div>
             <div class="param-row">
               <label></label>
