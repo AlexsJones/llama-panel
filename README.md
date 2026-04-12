@@ -8,6 +8,14 @@
   A native macOS desktop app for managing and interacting with <a href="https://github.com/ggerganov/llama.cpp/tree/master/examples/server">llama-server</a> instances. Built with <a href="https://tauri.app/">Tauri</a>.
 </p>
 
+<p align="center">
+  <img src="demo0.png" alt="Server configuration" width="720" />
+</p>
+
+<p align="center">
+  <img src="demo1.png" alt="HuggingFace model download" width="720" />
+</p>
+
 ## Features
 
 - **Connect** to any running llama-server instance
