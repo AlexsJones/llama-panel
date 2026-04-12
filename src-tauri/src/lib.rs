@@ -241,6 +241,34 @@ async fn start_server(binary: String, port: String, extra_args: String) -> Resul
     Ok(format!("Server started on port {port}"))
 }
 
+/// Start llama-server with a HuggingFace model via -hf flag
+#[tauri::command]
+async fn start_server_hf(
+    binary: String,
+    port: String,
+    hf_repo: String,
+    extra_args: String,
+) -> Result<String, String> {
+    let mut cmd = Command::new(&binary);
+    cmd.arg("--port").arg(&port);
+    cmd.arg("-hf").arg(&hf_repo);
+
+    if !extra_args.is_empty() {
+        let args: Vec<&str> = extra_args.split_whitespace().collect();
+        cmd.args(&args);
+    }
+
+    cmd.stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+
+    cmd.spawn()
+        .map_err(|e| format!("Failed to start server: {e}"))?;
+
+    Ok(format!(
+        "Server started on port {port} with model {hf_repo}"
+    ))
+}
+
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
@@ -253,6 +281,7 @@ pub fn run() {
             load_model,
             unload_model,
             start_server,
+            start_server_hf,
             send_completion,
             send_chat_completion,
             tokenize,

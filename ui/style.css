@@ -418,6 +418,32 @@ input[type="checkbox"] {
   background: rgba(239, 68, 68, 0.15);
 }
 
+/* HuggingFace suggestions */
+.hf-suggestions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.hf-suggestion-btn {
+  padding: 0.3rem 0.7rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-family: var(--mono);
+  transition: all 0.15s;
+  cursor: pointer;
+}
+
+.hf-suggestion-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(99, 102, 241, 0.08);
+}
+
 /* Models */
 .model-load-row {
   display: flex;

@@ -78,7 +78,48 @@
     <section id="tab-models" class="tab-panel">
       <div class="panel-grid">
         <div class="card wide">
-          <h2>Load Model</h2>
+          <h2>Download &amp; Run from HuggingFace</h2>
+          <p class="muted" style="margin-bottom: 0.75rem">
+            Start a new llama-server with a model from HuggingFace using the <code>-hf</code> flag.
+            The model will be downloaded and cached automatically.
+            Format: <code>user/repo</code> or <code>user/repo:quant</code>
+          </p>
+          <div class="param-group">
+            <div class="param-row">
+              <label for="hf-binary-path">Binary path</label>
+              <input type="text" class="param-val wide-input" id="hf-binary-path" placeholder="/usr/local/bin/llama-server" />
+            </div>
+            <div class="param-row">
+              <label for="hf-repo-input">HF model</label>
+              <input type="text" class="param-val wide-input" id="hf-repo-input" placeholder="e.g. ggml-org/gemma-3-1b-it-GGUF" />
+            </div>
+            <div class="param-row">
+              <label for="hf-port">Port</label>
+              <input type="number" class="param-val" id="hf-port" value="8080" style="width:90px" />
+            </div>
+            <div class="param-row">
+              <label for="hf-extra-args">Extra args</label>
+              <input type="text" class="param-val wide-input" id="hf-extra-args"
+                     placeholder="e.g. --ctx-size 4096 --ngl 99" />
+            </div>
+            <div class="param-row">
+              <label></label>
+              <button id="btn-hf-download" class="primary-btn">Download &amp; Start</button>
+              <span id="hf-download-status" class="muted" style="margin-left:0.5rem"></span>
+            </div>
+          </div>
+          <div class="hf-suggestions" style="margin-top: 1rem">
+            <span class="muted" style="font-size: 0.75rem; margin-right: 0.5rem;">Popular:</span>
+            <button class="hf-suggestion-btn" data-repo="ggml-org/gemma-3-1b-it-GGUF">Gemma 3 1B</button>
+            <button class="hf-suggestion-btn" data-repo="ggml-org/Qwen2.5-1.5B-Instruct-GGUF">Qwen 2.5 1.5B</button>
+            <button class="hf-suggestion-btn" data-repo="ggml-org/SmolLM2-1.7B-Instruct-GGUF">SmolLM2 1.7B</button>
+            <button class="hf-suggestion-btn" data-repo="bartowski/Meta-Llama-3.1-8B-Instruct-GGUF:Q4_K_M">Llama 3.1 8B Q4</button>
+            <button class="hf-suggestion-btn" data-repo="bartowski/Mistral-7B-Instruct-v0.3-GGUF:Q4_K_M">Mistral 7B Q4</button>
+            <button class="hf-suggestion-btn" data-repo="bartowski/Phi-4-mini-instruct-GGUF:Q4_K_M">Phi-4 Mini Q4</button>
+          </div>
+        </div>
+        <div class="card wide">
+          <h2>Load Model (Router Mode)</h2>
           <p class="muted" style="margin-bottom: 0.75rem">
             Enter a local model path, model alias, or HuggingFace repo (e.g. <code>user/repo/file.gguf</code>).
             HF models are auto-downloaded and cached. Server must be in router mode for hot-swap.

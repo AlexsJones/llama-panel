@@ -314,6 +314,75 @@ $("#btn-load-defaults").addEventListener("click", () => {
 
 $("#btn-reset-params").addEventListener("click", () => applyPreset(PRESETS.balanced));
 
+// ── HuggingFace Download & Start ──────────────────────────────────
+$("#btn-hf-download").addEventListener("click", startHfModel);
+$("#hf-repo-input").addEventListener("keydown", (e) => { if (e.key === "Enter") startHfModel(); });
+
+// Suggestion chips fill the repo input
+document.querySelectorAll(".hf-suggestion-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    $("#hf-repo-input").value = btn.dataset.repo;
+  });
+});
+
+// Sync binary path between Server tab and HF section
+$("#hf-binary-path").addEventListener("change", () => {
+  if (!$("#server-bin-path").value) $("#server-bin-path").value = $("#hf-binary-path").value;
+});
+$("#server-bin-path").addEventListener("change", () => {
+  if (!$("#hf-binary-path").value) $("#hf-binary-path").value = $("#server-bin-path").value;
+});
+
+async function startHfModel() {
+  const binary = $("#hf-binary-path").value.trim();
+  const hfRepo = $("#hf-repo-input").value.trim();
+  const port = $("#hf-port").value.trim() || "8080";
+  const extraArgs = $("#hf-extra-args").value.trim();
+  const statusEl = $("#hf-download-status");
+
+  if (!binary) {
+    statusEl.textContent = "Please enter the path to llama-server binary";
+    return;
+  }
+  if (!hfRepo) {
+    statusEl.textContent = "Please enter a HuggingFace model identifier";
+    return;
+  }
+
+  statusEl.textContent = "Starting server & downloading model...";
+  $("#btn-hf-download").disabled = true;
+
+  try {
+    await invoke("start_server_hf", { binary, port, hfRepo, extraArgs });
+    statusEl.textContent = `Server started on port ${port} — downloading ${hfRepo}...`;
+
+    // Auto-connect after a delay to let the download start
+    urlInput.value = `http://localhost:${port}`;
+    // Poll for connection since HF download can take time
+    let attempts = 0;
+    const tryConnect = setInterval(async () => {
+      attempts++;
+      try {
+        await doConnect();
+        if (connected) {
+          clearInterval(tryConnect);
+          statusEl.textContent = `Model ${hfRepo} ready on port ${port}`;
+        }
+      } catch {
+        // still downloading
+      }
+      if (attempts > 120) { // give up after 4 minutes
+        clearInterval(tryConnect);
+        statusEl.textContent = "Server started but auto-connect timed out. Try connecting manually.";
+      }
+    }, 2000);
+  } catch (e) {
+    statusEl.textContent = `Error: ${e}`;
+  } finally {
+    $("#btn-hf-download").disabled = false;
+  }
+}
+
 // ── Models Management ──────────────────────────────────────────────
 $("#btn-load-model").addEventListener("click", loadModel);
 $("#model-load-input").addEventListener("keydown", (e) => { if (e.key === "Enter") loadModel(); });
