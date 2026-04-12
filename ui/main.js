@@ -678,9 +678,21 @@ async function sendPrompt() {
       if (sysPrompt) messages.push({ role: "system", content: sysPrompt });
       messages.push({ role: "user", content: promptText });
 
+      // Build OAI-compatible body — use max_tokens instead of n_predict
+      const chatBody = {
+        messages,
+        temperature: params.temperature,
+        top_p: params.top_p,
+        max_tokens: params.n_predict > 0 ? params.n_predict : 512,
+        seed: params.seed >= 0 ? params.seed : undefined,
+        stream: false,
+      };
+      if (params.presence_penalty) chatBody.presence_penalty = params.presence_penalty;
+      if (params.frequency_penalty) chatBody.frequency_penalty = params.frequency_penalty;
+
       result = await invoke("send_chat_completion", {
         url: serverUrl,
-        body: { messages, ...params, max_tokens: params.n_predict > 0 ? params.n_predict : 512 },
+        body: chatBody,
       });
 
       const choice = result.choices?.[0];

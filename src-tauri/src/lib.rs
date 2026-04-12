@@ -191,7 +191,7 @@ async fn send_chat_completion(
     let resp = client()
         .post(format!("{url}/v1/chat/completions"))
         .json(&body)
-        .timeout(Duration::from_secs(120))
+        .timeout(Duration::from_secs(300))
         .send()
         .await
         .map_err(|e| format!("Request failed: {e}"))?;
