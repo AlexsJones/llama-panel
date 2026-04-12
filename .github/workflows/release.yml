@@ -20,7 +20,7 @@ jobs:
             runner: macos-latest
             arch: aarch64
           - target: x86_64-apple-darwin
-            runner: macos-13
+            runner: macos-latest
             arch: x86_64
 
     runs-on: ${{ matrix.runner }}
@@ -48,7 +48,13 @@ jobs:
 
       - name: Package
         run: |
-          APP_DIR="src-tauri/target/${{ matrix.target }}/release/bundle/macos"
+          APP_BUNDLE=$(find src-tauri/target -name "llama-panel.app" -type d | head -1)
+          if [ -z "$APP_BUNDLE" ]; then
+            echo "ERROR: llama-panel.app not found"
+            find src-tauri/target -name "*.app" -type d
+            exit 1
+          fi
+          APP_DIR=$(dirname "$APP_BUNDLE")
           ARCHIVE="llama-panel-${{ github.ref_name }}-macos-${{ matrix.arch }}.tar.gz"
           tar -czf "$ARCHIVE" -C "$APP_DIR" "llama-panel.app"
           shasum -a 256 "$ARCHIVE" > "$ARCHIVE.sha256"
