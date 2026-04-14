@@ -631,10 +631,23 @@ async fn download_hf_model(
         return Ok(snap_dir.join(first_name).to_string_lossy().to_string());
     }
 
-    let mut cumulative: u64 = 0;
-    let mut grand_total: u64 = 0;
+    // Use known sizes from the API for accurate progress
+    let total_files = files.len();
+    let grand_total: u64 = files
+        .iter()
+        .map(|f| f["size"].as_u64().unwrap_or(0))
+        .sum();
+    // Already-downloaded bytes count toward progress
+    let already_done: u64 = files
+        .iter()
+        .filter(|f| {
+            let h = f["hash"].as_str().unwrap_or("");
+            blobs_dir.join(h).exists()
+        })
+        .map(|f| f["size"].as_u64().unwrap_or(0))
+        .sum();
+    let mut cumulative: u64 = already_done;
     let mut last_emit = std::time::Instant::now();
-    let file_count = to_download.len();
 
     for (file_idx, dlf) in to_download.iter().enumerate() {
         let url = format!(
@@ -656,11 +669,6 @@ async fn download_hf_model(
             ));
         }
 
-        let file_size = resp.content_length().unwrap_or(0);
-        if file_idx == 0 {
-            grand_total = file_size * file_count as u64;
-        }
-
         // Write to blobs/{hash}
         let blob_path = blobs_dir.join(&dlf.hash);
         let tmp = blobs_dir.join(format!("{}.downloadInProgress", dlf.hash));
@@ -668,6 +676,14 @@ async fn download_hf_model(
             std::fs::File::create(&tmp).map_err(|e| format!("Failed to create file: {e}"))?;
 
         use std::io::Write;
+
+        // Label shows position within total files, not just files-to-download
+        let file_label = format!(
+            "{} ({}/{})",
+            dlf.filename,
+            total_files - to_download.len() + file_idx + 1,
+            total_files
+        );
 
         while let Some(chunk) = resp
             .chunk()
@@ -690,7 +706,7 @@ async fn download_hf_model(
                         "downloaded": cumulative,
                         "total": grand_total,
                         "pct": pct,
-                        "file": format!("{} ({}/{})", dlf.filename, file_idx + 1, file_count),
+                        "file": file_label,
                     }),
                 );
                 last_emit = std::time::Instant::now();
@@ -711,15 +727,11 @@ async fn download_hf_model(
             std::os::unix::fs::symlink(&rel, &snap_link)
                 .map_err(|e| format!("Failed to create symlink: {e}"))?;
         }
-
-        if file_idx == 0 && file_count > 1 {
-            grand_total = cumulative * file_count as u64;
-        }
     }
 
     let _ = app.emit(
         "download-progress",
-        serde_json::json!({"downloaded": cumulative, "total": cumulative, "pct": 100.0}),
+        serde_json::json!({"downloaded": grand_total, "total": grand_total, "pct": 100.0}),
     );
 
     let first_name = files[0]["path"].as_str().unwrap_or("");
