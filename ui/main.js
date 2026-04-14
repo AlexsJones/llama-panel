@@ -796,7 +796,19 @@ async function doStartServer(modelPath, modelName) {
   setDownloadBanner(`Loading ${modelName}...`);
 
   try {
-    const port = await invoke("pick_random_port");
+    // Determine port: use user-provided value if present, otherwise pick a random port
+    const portInput = $("#opt-port").value.trim();
+    let port;
+    if (portInput) {
+      const parsed = Number(portInput);
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        alert("Invalid port number");
+        return;
+      }
+      port = parsed;
+    } else {
+      port = await invoke("pick_random_port");
+    }
     await startServerLogListener(port);
     const extraArgs = buildServerArgs();
 

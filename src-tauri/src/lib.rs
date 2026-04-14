@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use tauri::Manager;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -1219,6 +1220,15 @@ pub fn run() {
             send_chat_completion,
             tokenize,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
-}
+            .build(tauri::generate_context!())
+            .expect("error while building tauri application")
+            .run(|app_handle, event| {
+                if let tauri::RunEvent::ExitRequested { .. } = event {
+                    // Perform cleanup before allowing the app to exit
+                    let state = app_handle.state::<OwnedServers>();
+                    // Block on the async stop_all_servers function
+                    let _ = tauri::async_runtime::block_on(stop_all_servers(state));
+                }
+            });
+        }
+
