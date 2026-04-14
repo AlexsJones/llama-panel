@@ -938,7 +938,7 @@ async fn delete_local_model(path: String) -> Result<(), String> {
 
     let split_re = regex::Regex::new(r"-\d{5}-of-\d{5}\.gguf$").unwrap();
 
-    // Collect symlinks to delete (single file or all split parts)
+    // Collect files to delete (single file or all split parts)
     let mut to_delete: Vec<PathBuf> = Vec::new();
 
     if split_re.is_match(fname) {
@@ -955,16 +955,34 @@ async fn delete_local_model(path: String) -> Result<(), String> {
         to_delete.push(p.to_path_buf());
     }
 
+    let mut errors = Vec::new();
+
     for link in &to_delete {
-        // Resolve the symlink to find the blob, then delete both
-        if let Ok(blob_path) = std::fs::read_link(link) {
-            let resolved = snap_dir.join(&blob_path);
-            let _ = std::fs::remove_file(&resolved);
+        // If it's a symlink, resolve and delete the blob first
+        if link.is_symlink() {
+            // Canonicalize resolves the symlink to the actual blob path
+            if let Ok(blob_path) = std::fs::canonicalize(link) {
+                if let Err(e) = std::fs::remove_file(&blob_path) {
+                    errors.push(format!("blob {}: {e}", blob_path.display()));
+                }
+            }
+            // Remove the symlink itself
+            if let Err(e) = std::fs::remove_file(link) {
+                errors.push(format!("symlink {}: {e}", link.display()));
+            }
+        } else {
+            // Regular file (not from HF hub layout)
+            if let Err(e) = std::fs::remove_file(link) {
+                errors.push(format!("{}: {e}", link.display()));
+            }
         }
-        let _ = std::fs::remove_file(link);
     }
 
-    // Clean up empty snapshot dir → repo dir
+    if !errors.is_empty() {
+        return Err(format!("Failed to delete: {}", errors.join("; ")));
+    }
+
+    // Clean up empty directories (snapshot → snapshots → repo)
     let _ = std::fs::remove_dir(snap_dir);
     if let Some(snaps) = snap_dir.parent() {
         let _ = std::fs::remove_dir(snaps);
