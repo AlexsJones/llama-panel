@@ -7,32 +7,99 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <!-- Connection Bar -->
+  <!-- Status Bar -->
   <header id="connection-bar">
     <div class="connection-group">
-      <label for="server-url">Server</label>
-      <input type="text" id="server-url" placeholder="http://localhost:8080" value="http://localhost:8080" />
-      <button id="btn-connect">Connect</button>
+      <input type="hidden" id="server-url" value="" />
       <span id="status-indicator" class="status-dot disconnected" title="Disconnected"></span>
-      <span id="status-text">Disconnected</span>
+      <span id="status-text">No server running</span>
     </div>
     <button id="btn-refresh" class="icon-btn" title="Refresh server info" disabled>&#x21bb;</button>
   </header>
 
   <!-- Tab Navigation -->
   <nav id="tabs">
-    <button class="tab active" data-tab="server">Server</button>
-    <button class="tab" data-tab="models">Models</button>
+    <button class="tab active" data-tab="models">Models</button>
+    <button class="tab" data-tab="server">Server</button>
     <button class="tab" data-tab="parameters">Parameters</button>
     <button class="tab" data-tab="playground">Playground</button>
   </nav>
 
+  <!-- Global Download Status Banner -->
+  <div id="download-banner" class="download-banner hidden">
+    <span class="download-banner-dot"></span>
+    <span id="download-banner-text"></span>
+    <span id="download-banner-eta" class="download-banner-eta"></span>
+    <div id="download-banner-bar-wrap" class="download-bar-wrap hidden">
+      <div id="download-banner-bar" class="download-bar"></div>
+      <span id="download-banner-pct" class="download-bar-pct"></span>
+    </div>
+  </div>
+
   <!-- Tab Content -->
   <main id="content">
 
-    <!-- Server Tab -->
-    <section id="tab-server" class="tab-panel active">
+    <!-- Models Tab (default) -->
+    <section id="tab-models" class="tab-panel active">
       <div class="panel-grid">
+        <!-- Running servers list -->
+        <div id="running-servers"></div>
+
+        <!-- Download from HuggingFace -->
+        <div class="card wide">
+          <h2>Download from HuggingFace</h2>
+          <p class="muted" style="margin-bottom: 0.75rem">
+            Search for a GGUF model. It will be downloaded to your local cache.
+          </p>
+          <div class="param-group">
+            <div class="param-row">
+              <label for="hf-repo-input">Search</label>
+              <div class="hf-search-wrapper">
+                <input type="text" class="param-val wide-input" id="hf-repo-input"
+                       placeholder="Search HuggingFace models..." autocomplete="off" />
+                <div id="hf-search-results" class="hf-search-dropdown"></div>
+              </div>
+            </div>
+          </div>
+          <!-- File picker (shown after selecting a repo) -->
+          <div id="hf-files-list" style="display:none; margin-top:0.75rem"></div>
+          <span id="hf-download-status" class="muted" style="display:block; margin-top:0.5rem"></span>
+          <div class="hf-suggestions" style="margin-top: 1rem">
+            <span class="muted" style="font-size: 0.75rem; margin-right: 0.5rem;">Popular:</span>
+            <button class="hf-suggestion-btn" data-repo="ggml-org/gemma-3-1b-it-GGUF">Gemma 3 1B</button>
+            <button class="hf-suggestion-btn" data-repo="ggml-org/Qwen2.5-1.5B-Instruct-GGUF">Qwen 2.5 1.5B</button>
+            <button class="hf-suggestion-btn" data-repo="ggml-org/SmolLM2-1.7B-Instruct-GGUF">SmolLM2 1.7B</button>
+            <button class="hf-suggestion-btn" data-repo="bartowski/Meta-Llama-3.1-8B-Instruct-GGUF:Q4_K_M">Llama 3.1 8B Q4</button>
+            <button class="hf-suggestion-btn" data-repo="bartowski/Mistral-7B-Instruct-v0.3-GGUF:Q4_K_M">Mistral 7B Q4</button>
+            <button class="hf-suggestion-btn" data-repo="bartowski/Phi-4-mini-instruct-GGUF:Q4_K_M">Phi-4 Mini Q4</button>
+          </div>
+        </div>
+
+        <!-- Downloaded Models -->
+        <div class="card wide">
+          <div class="card-header">
+            <h2>Downloaded Models</h2>
+            <button id="btn-refresh-local" class="secondary-btn">Refresh</button>
+          </div>
+          <div id="local-models-list">
+            <p class="muted">No downloaded models</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Server Tab -->
+    <section id="tab-server" class="tab-panel">
+      <div class="panel-grid">
+        <div class="card wide">
+          <div class="card-header">
+            <h2>Running Servers</h2>
+            <button id="btn-stop-all" class="danger-btn">Stop All</button>
+          </div>
+          <div id="server-tab-servers">
+            <p class="muted">No servers running. Start a model from the Models tab.</p>
+          </div>
+        </div>
         <div class="card">
           <h2>Active Model</h2>
           <div id="model-info" class="info-grid">
@@ -42,22 +109,18 @@
         <div class="card">
           <h2>Slot Details</h2>
           <div id="slot-details">
-            <p class="muted">Connect to see slot activity</p>
+            <p class="muted">Start a model to see slot activity</p>
           </div>
         </div>
         <div class="card wide">
-          <h2>Launch Server</h2>
+          <h2>Server Settings</h2>
           <p class="muted" style="margin-bottom: 0.75rem">
-            Start a new llama-server instance. Provide the path to the <code>llama-server</code> binary.
+            Configure server options. These apply when starting a model from the Models tab.
           </p>
           <div class="param-group">
             <div class="param-row">
               <label for="server-bin-path">Binary path</label>
-              <input type="text" class="param-val wide-input" id="server-bin-path" placeholder="/usr/local/bin/llama-server" />
-            </div>
-            <div class="param-row">
-              <label for="server-port">Port</label>
-              <input type="number" class="param-val" id="server-port" value="8080" style="width:90px" />
+              <input type="text" class="param-val wide-input" id="server-bin-path" placeholder="auto-detected" />
             </div>
           </div>
 
@@ -125,11 +188,6 @@
               <input type="text" class="param-val wide-input" id="server-extra-args"
                      placeholder="Any additional flags..." />
             </div>
-            <div class="param-row">
-              <label></label>
-              <button id="btn-start-server" class="primary-btn">Start Server</button>
-              <span id="server-launch-status" class="muted" style="margin-left:0.5rem"></span>
-            </div>
           </div>
         </div>
         <div class="card wide">
@@ -138,77 +196,9 @@
             <p class="muted">No properties available (server may need --props flag)</p>
           </div>
         </div>
-      </div>
-    </section>
-
-    <!-- Models Tab -->
-    <section id="tab-models" class="tab-panel">
-      <div class="panel-grid">
         <div class="card wide">
-          <h2>Download &amp; Run from HuggingFace</h2>
-          <p class="muted" style="margin-bottom: 0.75rem">
-            Start a new llama-server with a model from HuggingFace using the <code>-hf</code> flag.
-            The model will be downloaded and cached automatically.
-            Format: <code>user/repo</code> or <code>user/repo:quant</code>
-          </p>
-          <div class="param-group">
-            <div class="param-row">
-              <label for="hf-binary-path">Binary path</label>
-              <input type="text" class="param-val wide-input" id="hf-binary-path" placeholder="/usr/local/bin/llama-server" />
-            </div>
-            <div class="param-row">
-              <label for="hf-repo-input">HF model</label>
-              <div class="hf-search-wrapper">
-                <input type="text" class="param-val wide-input" id="hf-repo-input"
-                       placeholder="Search HuggingFace models..." autocomplete="off" />
-                <div id="hf-search-results" class="hf-search-dropdown"></div>
-              </div>
-            </div>
-            <div class="param-row">
-              <label for="hf-port">Port</label>
-              <input type="number" class="param-val" id="hf-port" value="8080" style="width:90px" />
-            </div>
-            <div class="param-row">
-              <label for="hf-extra-args">Extra args</label>
-              <input type="text" class="param-val wide-input" id="hf-extra-args"
-                     placeholder="e.g. --ctx-size 4096 --ngl 99" />
-            </div>
-            <div class="param-row">
-              <label></label>
-              <button id="btn-hf-download" class="primary-btn">Download &amp; Start</button>
-              <span id="hf-download-status" class="muted" style="margin-left:0.5rem"></span>
-            </div>
-          </div>
-          <div class="hf-suggestions" style="margin-top: 1rem">
-            <span class="muted" style="font-size: 0.75rem; margin-right: 0.5rem;">Popular:</span>
-            <button class="hf-suggestion-btn" data-repo="ggml-org/gemma-3-1b-it-GGUF">Gemma 3 1B</button>
-            <button class="hf-suggestion-btn" data-repo="ggml-org/Qwen2.5-1.5B-Instruct-GGUF">Qwen 2.5 1.5B</button>
-            <button class="hf-suggestion-btn" data-repo="ggml-org/SmolLM2-1.7B-Instruct-GGUF">SmolLM2 1.7B</button>
-            <button class="hf-suggestion-btn" data-repo="bartowski/Meta-Llama-3.1-8B-Instruct-GGUF:Q4_K_M">Llama 3.1 8B Q4</button>
-            <button class="hf-suggestion-btn" data-repo="bartowski/Mistral-7B-Instruct-v0.3-GGUF:Q4_K_M">Mistral 7B Q4</button>
-            <button class="hf-suggestion-btn" data-repo="bartowski/Phi-4-mini-instruct-GGUF:Q4_K_M">Phi-4 Mini Q4</button>
-          </div>
-        </div>
-        <div class="card wide">
-          <h2>Load Model (Router Mode)</h2>
-          <p class="muted" style="margin-bottom: 0.75rem">
-            Enter a local model path, model alias, or HuggingFace repo (e.g. <code>user/repo/file.gguf</code>).
-            HF models are auto-downloaded and cached. Server must be in router mode for hot-swap.
-          </p>
-          <div class="model-load-row">
-            <input type="text" id="model-load-input" placeholder="e.g. mistral-7b-q4.gguf or TheBloke/Mistral-7B-GGUF/mistral-7b.Q4_K_M.gguf" />
-            <button id="btn-load-model" class="primary-btn">Load</button>
-          </div>
-          <div id="model-load-status" class="muted" style="margin-top: 0.5rem"></div>
-        </div>
-        <div class="card wide">
-          <div class="card-header">
-            <h2>Available Models</h2>
-            <button id="btn-refresh-models" class="secondary-btn">Refresh</button>
-          </div>
-          <div id="models-list">
-            <p class="muted">Connect to a server to discover models</p>
-          </div>
+          <h2>Server Log</h2>
+          <pre id="server-log" class="server-log"><span class="muted">No output yet</span></pre>
         </div>
       </div>
     </section>
@@ -341,6 +331,27 @@
       <span class="muted">Not connected</span>
     </div>
   </footer>
+
+  <!-- Binary Path Modal -->
+  <div id="binary-modal" class="modal-overlay" style="display:none">
+    <div class="modal" style="max-width:500px">
+      <div class="modal-header">
+        <h2>llama-server not found</h2>
+      </div>
+      <div style="padding: 1.25rem">
+        <p class="muted" style="margin-bottom: 1rem">
+          Could not auto-detect <code>llama-server</code> on your system.
+          Please enter the full path to the binary.
+        </p>
+        <input type="text" class="param-val wide-input" id="binary-modal-input"
+               placeholder="/path/to/llama-server" style="width:100%" />
+        <span id="binary-modal-status" class="muted" style="display:block; margin-top:0.5rem; font-size:0.8rem"></span>
+      </div>
+      <div class="modal-footer">
+        <button id="binary-modal-save" class="primary-btn">Save</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Chat Template Modal -->
   <div id="template-modal" class="modal-overlay" style="display:none">

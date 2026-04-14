@@ -1,4 +1,5 @@
 const { invoke } = window.__TAURI__.core;
+const { listen } = window.__TAURI__.event;
 
 // ── State ──────────────────────────────────────────────────────────
 let serverUrl = "";
@@ -6,11 +7,12 @@ let connected = false;
 let serverProps = {};
 let playgroundMode = "completion";
 let slotPollTimer = null;
+let detectedBinary = "";
+let runningServers = []; // [{port, model, name, status}]
 
 // ── DOM refs ───────────────────────────────────────────────────────
 const $ = (sel) => document.querySelector(sel);
 const urlInput = $("#server-url");
-const btnConnect = $("#btn-connect");
 const btnRefresh = $("#btn-refresh");
 const statusDot = $("#status-indicator");
 const statusText = $("#status-text");
@@ -95,23 +97,16 @@ function getParams() {
   return params;
 }
 
-// ── Connection ─────────────────────────────────────────────────────
-btnConnect.addEventListener("click", doConnect);
-urlInput.addEventListener("keydown", (e) => { if (e.key === "Enter") doConnect(); });
-
-async function doConnect() {
-  serverUrl = urlInput.value.trim().replace(/\/+$/, "");
-  if (!serverUrl) return;
-
-  setStatus("loading", "Connecting...");
-  btnConnect.disabled = true;
+// ── Internal Connection (no UI — managed by start/stop) ───────────
+async function connectToServer(url) {
+  serverUrl = url;
 
   try {
     const result = await invoke("connect", { url: serverUrl });
     connected = true;
     serverProps = result.props || {};
-    setStatus("connected", "Connected");
-    btnConnect.textContent = "Connected";
+    const port = new URL(serverUrl).port;
+    setStatus("connected", `Connected to port ${port}`);
     btnRefresh.disabled = false;
     $("#btn-send").disabled = false;
 
@@ -120,15 +115,11 @@ async function doConnect() {
     renderProps(result.props);
     syncServerSettings(result.props);
     startSlotPolling();
-    refreshModelsList();
   } catch (e) {
     connected = false;
     setStatus("disconnected", `Failed: ${e}`);
-    btnConnect.textContent = "Connect";
     btnRefresh.disabled = true;
     $("#btn-send").disabled = true;
-  } finally {
-    btnConnect.disabled = false;
   }
 }
 
@@ -137,7 +128,7 @@ function setStatus(state, text) {
   statusText.textContent = text;
 }
 
-// ── Server Launch ──────────────────────────────────────────────────
+// ── Server Launch (from Server tab — advanced) ────────────────────
 function buildServerArgs() {
   const args = [];
   const ctxSize = $("#opt-ctx-size").value.trim();
@@ -148,12 +139,12 @@ function buildServerArgs() {
   const host = $("#opt-host").value.trim();
 
   if (ctxSize) { args.push("--ctx-size", ctxSize); }
-  if (ngl) { args.push("--ngl", ngl); }
+  if (ngl) { args.push("-ngl", ngl); }
   if (batchSize) { args.push("--batch-size", batchSize); }
   if (ubatchSize) { args.push("--ubatch-size", ubatchSize); }
   if (parallel && parallel !== "1") { args.push("--parallel", parallel); }
   if (host && host !== "127.0.0.1") { args.push("--host", host); }
-  if ($("#opt-flash-attn").checked) { args.push("--flash-attn"); }
+  if ($("#opt-flash-attn").checked) { args.push("--flash-attn", "on"); }
   if ($("#opt-slots").checked) { args.push("--slots"); }
   if ($("#opt-cont-batch").checked) { args.push("--cont-batching"); }
   if ($("#opt-props").checked) { args.push("--props"); }
@@ -164,31 +155,6 @@ function buildServerArgs() {
 
   return args.join(" ");
 }
-
-$("#btn-start-server").addEventListener("click", async () => {
-  const bin = $("#server-bin-path").value.trim();
-  const port = $("#server-port").value.trim() || "8080";
-  const extraArgs = buildServerArgs();
-
-  if (!bin) {
-    $("#server-launch-status").textContent = "Please enter the path to llama-server binary";
-    return;
-  }
-
-  const statusEl = $("#server-launch-status");
-  statusEl.textContent = "Starting server...";
-
-  try {
-    await invoke("start_server", { binary: bin, port, extraArgs });
-    statusEl.textContent = `Server started on port ${port}`;
-    // Auto-connect
-    urlInput.value = `http://localhost:${port}`;
-    // Wait a moment for server to be ready
-    setTimeout(doConnect, 2000);
-  } catch (e) {
-    statusEl.textContent = `Error: ${e}`;
-  }
-});
 
 // ── Refresh ────────────────────────────────────────────────────────
 btnRefresh.addEventListener("click", async () => {
@@ -255,7 +221,6 @@ function renderProps(p) {
 
   const defaults = p.default_generation_settings || {};
 
-  // Group generation settings into categories for readability
   const sampling = ["temperature", "top_k", "top_p", "min_p", "typical_p", "top_n_sigma"];
   const penalties = ["repeat_penalty", "repeat_last_n", "presence_penalty", "frequency_penalty",
     "dry_multiplier", "dry_base", "dry_allowed_length", "dry_penalty_last_n"];
@@ -294,7 +259,6 @@ function renderProps(p) {
   if (Object.keys(defaults).length > 0) {
     const grouped = {};
     for (const [k, v] of Object.entries(defaults)) {
-      // Skip noisy/internal keys
       if (["samplers", "grammar", "generation_prompt", "chat_format", "params",
            "lora", "ignore_eos", "post_sampling_probs", "reasoning_in_content",
            "reasoning_format", "timings_per_token", "backend_sampling"].includes(k)) continue;
@@ -321,7 +285,6 @@ function renderProps(p) {
 
   el.innerHTML = html;
 
-  // Wire up template button after rendering
   const templateBtn = $("#btn-view-template");
   if (templateBtn && p.chat_template) {
     templateBtn.addEventListener("click", () => openTemplateModal(p.chat_template));
@@ -343,12 +306,10 @@ function closeTemplateModal() {
 
 $("#template-modal-close").addEventListener("click", closeTemplateModal);
 
-// Close on overlay click (but not modal body)
 $("#template-modal").addEventListener("click", (e) => {
   if (e.target === e.currentTarget) closeTemplateModal();
 });
 
-// Close on Escape
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && $("#template-modal").style.display === "flex") {
     closeTemplateModal();
@@ -361,7 +322,6 @@ function syncServerSettings(props) {
 
   const defaults = props.default_generation_settings || {};
 
-  // Populate parameter sliders from server defaults
   if (defaults.temperature !== undefined) setParam("temperature", defaults.temperature);
   if (defaults.top_k !== undefined) setParam("top-k", defaults.top_k);
   if (defaults.top_p !== undefined) setParam("top-p", defaults.top_p);
@@ -371,7 +331,6 @@ function syncServerSettings(props) {
   if (defaults.frequency_penalty !== undefined) setParam("frequency-penalty", defaults.frequency_penalty);
   if (defaults.n_predict !== undefined && defaults.n_predict > 0) setParam("n-predict", defaults.n_predict);
 
-  // Populate server launch options from what we can detect
   if (defaults.n_ctx !== undefined) $("#opt-ctx-size").value = defaults.n_ctx;
   if (props.total_slots !== undefined) $("#opt-parallel").value = props.total_slots;
 }
@@ -393,10 +352,6 @@ $("#btn-load-defaults").addEventListener("click", () => {
 });
 
 $("#btn-reset-params").addEventListener("click", () => applyPreset(PRESETS.balanced));
-
-// ── HuggingFace Download & Start ──────────────────────────────────
-$("#btn-hf-download").addEventListener("click", startHfModel);
-$("#hf-repo-input").addEventListener("keydown", (e) => { if (e.key === "Enter") startHfModel(); });
 
 // ── HF Live Search ────────────────────────────────────────────────
 let hfSearchTimer = null;
@@ -420,7 +375,6 @@ hfInput.addEventListener("keydown", (e) => {
   }
 });
 
-// Close dropdown on outside click
 document.addEventListener("click", (e) => {
   if (!e.target.closest(".hf-search-wrapper")) {
     hfDropdown.style.display = "none";
@@ -453,11 +407,12 @@ async function searchHfModels(query) {
 
     hfDropdown.style.display = "block";
 
-    // Click to select
     hfDropdown.querySelectorAll(".hf-search-item").forEach((item) => {
       item.addEventListener("click", () => {
-        hfInput.value = item.dataset.repo;
+        const repo = item.dataset.repo;
+        hfInput.value = repo;
         hfDropdown.style.display = "none";
+        loadHfFiles(repo);
       });
     });
   } catch {
@@ -472,195 +427,435 @@ function formatCount(n) {
   return String(n);
 }
 
-// Suggestion chips fill the repo input
+function formatSize(bytes) {
+  if (bytes >= 1e9) return (bytes / 1e9).toFixed(2) + " GB";
+  if (bytes >= 1e6) return (bytes / 1e6).toFixed(1) + " MB";
+  if (bytes >= 1e3) return (bytes / 1e3).toFixed(0) + " KB";
+  return bytes + " B";
+}
+
+// Suggestion chips
 document.querySelectorAll(".hf-suggestion-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
-    hfInput.value = btn.dataset.repo;
+    const repo = btn.dataset.repo;
+    hfInput.value = repo;
     hfDropdown.style.display = "none";
+    // Handle repo:quant format
+    const colonIdx = repo.indexOf(":");
+    const baseRepo = colonIdx > -1 ? repo.substring(0, colonIdx) : repo;
+    loadHfFiles(baseRepo, colonIdx > -1 ? repo.substring(colonIdx + 1) : null);
   });
 });
 
-// Sync binary path between Server tab and HF section
-$("#hf-binary-path").addEventListener("change", () => {
-  if (!$("#server-bin-path").value) $("#server-bin-path").value = $("#hf-binary-path").value;
-});
-$("#server-bin-path").addEventListener("change", () => {
-  if (!$("#hf-binary-path").value) $("#hf-binary-path").value = $("#server-bin-path").value;
-});
-
-async function startHfModel() {
-  const binary = $("#hf-binary-path").value.trim();
-  const hfRepo = $("#hf-repo-input").value.trim();
-  const port = $("#hf-port").value.trim() || "8080";
-  const extraArgs = $("#hf-extra-args").value.trim();
+// ── HF File Picker ────────────────────────────────────────────────
+async function loadHfFiles(repo, quantFilter) {
+  const container = $("#hf-files-list");
   const statusEl = $("#hf-download-status");
-
-  if (!binary) {
-    statusEl.textContent = "Please enter the path to llama-server binary";
-    return;
-  }
-  if (!hfRepo) {
-    statusEl.textContent = "Please enter a HuggingFace model identifier";
-    return;
-  }
-
-  statusEl.textContent = "Starting server & downloading model...";
-  $("#btn-hf-download").disabled = true;
+  container.style.display = "block";
+  container.innerHTML = `<p class="muted">Loading files from ${escapeHtml(repo)}...</p>`;
+  statusEl.textContent = "";
 
   try {
-    await invoke("start_server_hf", { binary, port, hfRepo, extraArgs });
-    statusEl.textContent = `Server started on port ${port} — downloading ${hfRepo}...`;
+    const result = await invoke("list_hf_files", { repo });
+    const commit = result.commit;
+    const bundles = result.bundles || [];
+    if (bundles.length === 0) {
+      container.innerHTML = `<p class="muted">No GGUF files found in this repo</p>`;
+      return;
+    }
 
-    // Auto-connect after a delay to let the download start
-    urlInput.value = `http://localhost:${port}`;
-    // Poll for connection since HF download can take time
+    // Sort by size descending
+    bundles.sort((a, b) => (b.total_size || 0) - (a.total_size || 0));
+
+    // If quantFilter, try to auto-select matching bundle
+    if (quantFilter) {
+      const match = bundles.find((b) => b.name.toLowerCase().includes(quantFilter.toLowerCase()));
+      if (match) {
+        container.style.display = "none";
+        downloadModel(repo, commit, match.files, match.name);
+        return;
+      }
+    }
+
+    container.innerHTML = `<div class="hf-files-header muted">Select a model to download:</div>` +
+      bundles.map((b, idx) => {
+        const parts = b.file_count > 1 ? ` (${b.file_count} parts)` : "";
+        return `<div class="hf-file-row">
+          <span class="hf-file-name">${escapeHtml(b.name)}${parts}</span>
+          <span class="hf-file-size muted">${formatSize(b.total_size)}</span>
+          <button class="secondary-btn hf-file-dl-btn" data-idx="${idx}">Download</button>
+        </div>`;
+      }).join("");
+
+    container.querySelectorAll(".hf-file-dl-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const bundle = bundles[parseInt(btn.dataset.idx)];
+        downloadModel(repo, commit, bundle.files, bundle.name);
+      });
+    });
+  } catch (e) {
+    container.innerHTML = `<p class="muted">Error: ${e}</p>`;
+  }
+}
+
+// ── Download Banner ───────────────────────────────────────────────
+let downloadStartTime = null;
+let downloadUnlisten = null;
+
+function setDownloadBanner(text, state = "active") {
+  const banner = $("#download-banner");
+  banner.classList.remove("hidden", "success", "error");
+  if (state === "success") banner.classList.add("success");
+  else if (state === "error") banner.classList.add("error");
+  $("#download-banner-text").textContent = text;
+  if (state === "error") {
+    $("#download-banner-bar-wrap").classList.add("hidden");
+    $("#download-banner-eta").textContent = "";
+  }
+}
+
+function setDownloadProgress(pct, etaText) {
+  const barWrap = $("#download-banner-bar-wrap");
+  barWrap.classList.remove("hidden");
+  $("#download-banner-bar").style.width = `${pct}%`;
+  $("#download-banner-pct").textContent = `${pct.toFixed(1)}%`;
+  $("#download-banner-eta").textContent = etaText || "";
+}
+
+function hideDownloadBanner() {
+  $("#download-banner").classList.add("hidden");
+  $("#download-banner-bar-wrap").classList.add("hidden");
+  $("#download-banner-eta").textContent = "";
+}
+
+function formatEta(seconds) {
+  if (!isFinite(seconds) || seconds <= 0) return "";
+  if (seconds < 60) return `ETA ${Math.ceil(seconds)}s`;
+  const m = Math.floor(seconds / 60);
+  const s = Math.ceil(seconds % 60);
+  if (m < 60) return `ETA ${m}m ${s}s`;
+  const h = Math.floor(m / 60);
+  return `ETA ${h}h ${m % 60}m`;
+}
+
+// ── Model Download ────────────────────────────────────────────────
+async function downloadModel(repo, commit, files, displayName) {
+  const statusEl = $("#hf-download-status");
+  const label = displayName || files[0]?.path || "model";
+  const parts = files.length > 1 ? ` (${files.length} files)` : "";
+  statusEl.textContent = `Downloading ${label}${parts}...`;
+  setDownloadBanner(`Downloading ${label}${parts}...`);
+  downloadStartTime = Date.now();
+
+  // Listen for download progress events
+  if (downloadUnlisten) downloadUnlisten();
+  downloadUnlisten = await listen("download-progress", (event) => {
+    const { pct, downloaded, total, file } = event.payload;
+    if (pct >= 100) return; // final event handled by the await
+    const elapsed = (Date.now() - downloadStartTime) / 1000;
+    const fileLabel = file ? ` (${file})` : "";
+    if (total > 0) {
+      const etaSec = pct > 0 ? (elapsed / pct) * (100 - pct) : 0;
+      setDownloadProgress(pct, `${formatSize(downloaded)} / ${formatSize(total)}  ${formatEta(etaSec)}`);
+      statusEl.textContent = `Downloading${fileLabel}... ${pct.toFixed(1)}%`;
+    } else {
+      // Unknown total size — show bytes downloaded
+      setDownloadBanner(`Downloading${fileLabel}... ${formatSize(downloaded)}`);
+      statusEl.textContent = `Downloading${fileLabel}... ${formatSize(downloaded)}`;
+    }
+  });
+
+  try {
+    const localPath = await invoke("download_hf_model", { repo, commit, files });
+    if (downloadUnlisten) { downloadUnlisten(); downloadUnlisten = null; }
+
+    setDownloadProgress(100, "");
+    const elapsed = ((Date.now() - downloadStartTime) / 1000).toFixed(0);
+    const msg = `Downloaded ${label}${parts} (${elapsed}s)`;
+    statusEl.textContent = msg;
+    setDownloadBanner(msg, "success");
+    setTimeout(hideDownloadBanner, 5000);
+
+    // Hide file picker, refresh local models
+    $("#hf-files-list").style.display = "none";
+    refreshLocalModels();
+  } catch (e) {
+    if (downloadUnlisten) { downloadUnlisten(); downloadUnlisten = null; }
+    const errMsg = `Download failed: ${e}`;
+    statusEl.textContent = errMsg;
+    setDownloadBanner(errMsg, "error");
+  }
+}
+
+// ── Local Models List ─────────────────────────────────────────────
+$("#btn-refresh-local").addEventListener("click", refreshLocalModels);
+
+async function refreshLocalModels() {
+  const container = $("#local-models-list");
+
+  try {
+    const models = await invoke("list_local_models");
+    if (!models || models.length === 0) {
+      container.innerHTML = `<p class="muted">No downloaded models. Search HuggingFace above to download one.</p>`;
+      return;
+    }
+
+    container.innerHTML = models.map((m) => {
+      const runningSrv = runningServers.find((s) => s.model === m.path);
+      const isRunning = !!runningSrv;
+      const runBadge = isRunning
+        ? `<span class="model-status-badge loaded">PORT ${runningSrv.port}</span>`
+        : "";
+      return `<div class="model-card">
+        <div class="model-card-info">
+          <div class="model-card-name" title="${escapeHtml(m.path)}">${escapeHtml(m.name)}</div>
+          <div class="model-card-meta">${formatSize(m.size)}</div>
+        </div>
+        ${runBadge}
+        <button class="primary-btn model-start-btn" data-path="${escapeHtml(m.path)}" data-name="${escapeHtml(m.name)}">${isRunning ? "Start Another" : "Start"}</button>
+        <button class="danger-btn model-delete-btn" data-path="${escapeHtml(m.path)}" data-name="${escapeHtml(m.name)}" ${isRunning ? "disabled" : ""}>Delete</button>
+      </div>`;
+    }).join("");
+
+    container.querySelectorAll(".model-start-btn").forEach((btn) => {
+      btn.addEventListener("click", () => startLocalModel(btn.dataset.path, btn.dataset.name));
+    });
+
+    container.querySelectorAll(".model-delete-btn").forEach((btn) => {
+      btn.addEventListener("click", () => deleteLocalModel(btn.dataset.path, btn.dataset.name));
+    });
+  } catch (e) {
+    container.innerHTML = `<p class="muted">Error: ${e}</p>`;
+  }
+}
+
+async function deleteLocalModel(path, name) {
+  if (!confirm(`Delete ${name}?`)) return;
+  try {
+    await invoke("delete_local_model", { path });
+    refreshLocalModels();
+  } catch (e) {
+    alert(`Failed to delete: ${e}`);
+  }
+}
+
+// ── Server Log ────────────────────────────────────────────────────
+let serverLogUnlisten = null;
+const MAX_LOG_LINES = 500;
+
+function clearServerLog() {
+  const el = $("#server-log");
+  el.textContent = "";
+}
+
+function appendServerLog(line) {
+  const el = $("#server-log");
+  // Clear placeholder
+  if (el.querySelector(".muted")) el.textContent = "";
+
+  el.textContent += line + "\n";
+
+  // Trim if too long
+  const lines = el.textContent.split("\n");
+  if (lines.length > MAX_LOG_LINES) {
+    el.textContent = lines.slice(-MAX_LOG_LINES).join("\n");
+  }
+
+  // Auto-scroll
+  el.scrollTop = el.scrollHeight;
+}
+
+async function startServerLogListener(filterPort) {
+  if (serverLogUnlisten) serverLogUnlisten();
+  serverLogUnlisten = await listen("server-log", (event) => {
+    const { port, line } = event.payload;
+    // Only show logs for the server we're currently loading
+    if (filterPort && port !== filterPort) return;
+
+    appendServerLog(line);
+
+    // Update banner with meaningful loading progress
+    if (line.includes("llama_model_load") || line.includes("loading model") ||
+        line.includes("llm_load") || line.includes("GGML_METAL") ||
+        line.includes("offloaded")) {
+      const short = line.length > 80 ? line.substring(0, 80) + "..." : line;
+      $("#download-banner-text").textContent = short;
+    }
+  });
+}
+
+function stopServerLogListener() {
+  if (serverLogUnlisten) {
+    serverLogUnlisten();
+    serverLogUnlisten = null;
+  }
+}
+
+// ── Start Local Model ─────────────────────────────────────────────
+async function startLocalModel(modelPath, modelName) {
+  const binary = getResolvedBinary();
+  if (!binary) { showBinaryModal(); return; }
+
+  clearServerLog();
+  setDownloadBanner(`Loading ${modelName}...`);
+
+  try {
+    const port = await invoke("pick_random_port");
+    await startServerLogListener(port);
+    const extraArgs = buildServerArgs();
+
+    await invoke("start_server", { binary, port: String(port), extraArgs, modelPath });
+
+    runningServers.push({ port, model: modelPath, name: modelName, status: "loading" });
+    renderRunningServers();
+
+    setDownloadBanner(`Loading ${modelName} on port ${port}...`);
+
+    const srvUrl = `http://localhost:${port}`;
+
+    // Poll for health === "ok"
     let attempts = 0;
     const tryConnect = setInterval(async () => {
       attempts++;
       try {
-        await doConnect();
-        if (connected) {
+        const health = await invoke("get_health", { url: srvUrl });
+        const st = health?.status;
+        if (st === "ok" || st === "no slot available") {
           clearInterval(tryConnect);
-          statusEl.textContent = `Model ${hfRepo} ready on port ${port}`;
+          stopServerLogListener();
+          // Mark as ready
+          const srv = runningServers.find((s) => s.port === port);
+          if (srv) srv.status = "ready";
+          renderRunningServers();
+          // Auto-connect to this server for playground
+          await connectToServer(srvUrl);
+          const msg = `${modelName} running on port ${port}`;
+          setDownloadBanner(msg, "success");
+          setTimeout(hideDownloadBanner, 5000);
+          refreshLocalModels();
         }
       } catch {
-        // still downloading
+        // server not up yet
       }
-      if (attempts > 120) { // give up after 4 minutes
+      if (attempts > 300) { // 10 minutes
         clearInterval(tryConnect);
-        statusEl.textContent = "Server started but auto-connect timed out. Try connecting manually.";
+        stopServerLogListener();
+        setDownloadBanner("Server start timed out", "error");
       }
     }, 2000);
   } catch (e) {
-    statusEl.textContent = `Error: ${e}`;
-  } finally {
-    $("#btn-hf-download").disabled = false;
+    stopServerLogListener();
+    setDownloadBanner(`Error: ${e}`, "error");
   }
 }
 
-// ── Models Management ──────────────────────────────────────────────
-$("#btn-load-model").addEventListener("click", loadModel);
-$("#model-load-input").addEventListener("keydown", (e) => { if (e.key === "Enter") loadModel(); });
-$("#btn-refresh-models").addEventListener("click", refreshModelsList);
+// ── Running Servers Management ────────────────────────────────────
+function renderRunningServers() {
+  const containers = [$("#running-servers"), $("#server-tab-servers")];
 
-async function loadModel() {
-  if (!serverUrl || !connected) return;
-
-  const modelId = $("#model-load-input").value.trim();
-  if (!modelId) return;
-
-  const statusEl = $("#model-load-status");
-  statusEl.textContent = "Loading model... (this may take a while for HF downloads)";
-  $("#btn-load-model").disabled = true;
-
-  try {
-    await invoke("load_model", { url: serverUrl, model: modelId });
-    statusEl.textContent = `Model "${modelId}" loaded successfully`;
-    $("#model-load-input").value = "";
-    refreshModelsList();
-    // Refresh server tab too
-    const [models, props] = await Promise.all([
-      invoke("get_models", { url: serverUrl }),
-      invoke("get_props", { url: serverUrl }).catch(() => ({})),
-    ]);
-    renderModels(models);
-    renderProps(props);
-  } catch (e) {
-    statusEl.textContent = `Error: ${e}`;
-  } finally {
-    $("#btn-load-model").disabled = false;
-  }
-}
-
-async function refreshModelsList() {
-  if (!serverUrl || !connected) return;
-  const container = $("#models-list");
-
-  // Try router-mode /models first, fall back to /v1/models
-  let models = [];
-  let isRouterMode = false;
-
-  try {
-    const result = await invoke("list_available_models", { url: serverUrl });
-    if (Array.isArray(result)) {
-      models = result;
-      isRouterMode = true;
-    } else if (result?.data) {
-      models = result.data;
-    }
-  } catch {
-    // Router mode not available, try /v1/models
-    try {
-      const result = await invoke("get_models", { url: serverUrl });
-      models = result?.data || [];
-    } catch {
-      container.innerHTML = `<p class="muted">Could not fetch models</p>`;
-      return;
-    }
-  }
-
-  if (models.length === 0) {
-    container.innerHTML = `<p class="muted">No models found. Load one above or start server with a model.</p>`;
+  if (runningServers.length === 0) {
+    containers[0].innerHTML = "";
+    containers[1].innerHTML = `<p class="muted">No servers running. Start a model from the Models tab.</p>`;
+    setStatus("disconnected", "No server running");
     return;
   }
 
-  container.innerHTML = models.map((m) => {
-    const id = m.id || m.model || m;
-    const meta = m.meta || {};
-    const status = m.status || (m.object === "model" ? "loaded" : "available");
-    const badgeClass = status === "loaded" ? "loaded" : status === "loading" ? "loading" : "available";
-    const params = meta.n_params ? (meta.n_params / 1e9).toFixed(1) + "B" : "";
-    const arch = meta["general.architecture"] || "";
-    const metaStr = [arch, params].filter(Boolean).join(" / ");
-
-    const unloadBtn = isRouterMode && status === "loaded"
-      ? `<button class="danger-btn" onclick="unloadModel('${escapeHtml(id)}')">Unload</button>`
+  const html = runningServers.map((srv) => {
+    const dotClass = srv.status === "ready" ? "connected" : "loading";
+    const statusLabel = srv.status === "ready" ? "" : " (loading...)";
+    const openBtn = srv.status === "ready"
+      ? `<button class="open-btn srv-open" data-port="${srv.port}">Open UI</button>`
       : "";
-    const loadBtn = isRouterMode && status !== "loaded"
-      ? `<button class="secondary-btn" onclick="loadModelById('${escapeHtml(id)}')">Load</button>`
+    const connectBtn = srv.status === "ready"
+      ? `<button class="secondary-btn srv-connect" data-port="${srv.port}" style="font-size:0.75rem;padding:0.3rem 0.6rem">Connect</button>`
       : "";
-
-    return `
-      <div class="model-card">
-        <div class="model-card-info">
-          <div class="model-card-name" title="${escapeHtml(id)}">${escapeHtml(id)}</div>
-          ${metaStr ? `<div class="model-card-meta">${metaStr}</div>` : ""}
-        </div>
-        <span class="model-status-badge ${badgeClass}">${status}</span>
-        ${loadBtn}${unloadBtn}
-      </div>`;
+    return `<div class="running-server-card">
+      <div class="running-server-info">
+        <span class="status-dot ${dotClass}"></span>
+        <span class="running-server-model" title="${escapeHtml(srv.name)}">${escapeHtml(srv.name)}${statusLabel}</span>
+        <span class="running-server-port">port ${srv.port}</span>
+      </div>
+      <div class="running-server-actions">
+        ${connectBtn}
+        ${openBtn}
+        <button class="danger-btn srv-stop" data-port="${srv.port}">Stop</button>
+      </div>
+    </div>`;
   }).join("");
+
+  for (const c of containers) {
+    c.innerHTML = html;
+    c.querySelectorAll(".srv-stop").forEach((btn) => {
+      btn.addEventListener("click", () => stopOneServer(parseInt(btn.dataset.port)));
+    });
+    c.querySelectorAll(".srv-open").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        invoke("open_in_browser", { url: `http://localhost:${btn.dataset.port}` });
+      });
+    });
+    c.querySelectorAll(".srv-connect").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        connectToServer(`http://localhost:${btn.dataset.port}`);
+      });
+    });
+  }
+
+  // Update header status
+  const readyCount = runningServers.filter((s) => s.status === "ready").length;
+  const loadingCount = runningServers.length - readyCount;
+  const parts = [];
+  if (readyCount) parts.push(`${readyCount} running`);
+  if (loadingCount) parts.push(`${loadingCount} loading`);
+  setStatus(readyCount > 0 ? "connected" : "loading", parts.join(", "));
 }
 
-// Global handlers for inline onclick (model cards)
-window.loadModelById = async (id) => {
-  if (!serverUrl) return;
+async function stopOneServer(port) {
   try {
-    await invoke("load_model", { url: serverUrl, model: id });
-    refreshModelsList();
-    const models = await invoke("get_models", { url: serverUrl });
-    renderModels(models);
+    stopServerLogListener();
+    await invoke("stop_server", { port });
+    runningServers = runningServers.filter((s) => s.port !== port);
+    // If we were connected to this one, disconnect
+    if (serverUrl === `http://localhost:${port}`) {
+      serverUrl = "";
+      connected = false;
+      btnRefresh.disabled = true;
+      $("#btn-send").disabled = true;
+      stopSlotPolling();
+      // Auto-connect to another ready server if available
+      const ready = runningServers.find((s) => s.status === "ready");
+      if (ready) {
+        await connectToServer(`http://localhost:${ready.port}`);
+      }
+    }
+    renderRunningServers();
+    refreshLocalModels();
   } catch (e) {
-    alert(`Failed to load model: ${e}`);
+    alert(`Error: ${e}`);
   }
-};
-
-window.unloadModel = async (id) => {
-  if (!serverUrl) return;
-  try {
-    await invoke("unload_model", { url: serverUrl, model: id });
-    refreshModelsList();
-    const models = await invoke("get_models", { url: serverUrl });
-    renderModels(models);
-  } catch (e) {
-    alert(`Failed to unload model: ${e}`);
-  }
-};
-
-function escapeHtml(s) {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 }
+
+$("#btn-stop-all").addEventListener("click", async () => {
+  try {
+    stopServerLogListener();
+    await invoke("stop_all_servers");
+    runningServers = [];
+    serverUrl = "";
+    connected = false;
+    btnRefresh.disabled = true;
+    $("#btn-send").disabled = true;
+    stopSlotPolling();
+    renderRunningServers();
+    refreshLocalModels();
+  } catch (e) {
+    alert(`Error: ${e}`);
+  }
+});
+
+// Sync manual binary path edits into detectedBinary
+$("#server-bin-path").addEventListener("change", () => {
+  const val = $("#server-bin-path").value.trim();
+  if (val) detectedBinary = val;
+});
 
 // ── Persistent Slot Bar ────────────────────────────────────────────
 $("#slot-auto-poll").addEventListener("change", (e) => {
@@ -692,16 +887,12 @@ async function refreshSlotBar() {
   try {
     const slots = await invoke("get_slots", { url: serverUrl });
 
-    // Log raw slot data so you can inspect all available fields
-    console.log("[slot-details] raw /slots response:", slots);
-
     if (!Array.isArray(slots) || slots.length === 0) {
       container.innerHTML = `<span class="muted">No slots (--slots flag needed)</span>`;
       if (detailPane) detailPane.innerHTML = `<p class="muted">No slots (server may need --slots flag)</p>`;
       return;
     }
 
-    // ── Footer slot pills (unchanged) ──
     container.innerHTML = slots.map((s) => {
       const processing = s.is_processing;
       const state = processing ? "processing" : "idle";
@@ -716,7 +907,6 @@ async function refreshSlotBar() {
         </div>`;
     }).join("");
 
-    // ── Slot Details pane ──
     if (!detailPane) return;
 
     const totalSlots = slots.length;
@@ -736,12 +926,8 @@ async function refreshSlotBar() {
       const ctx = s.n_ctx ?? 0;
       const nPast = s.n_past ?? 0;
       const nRemaining = s.n_remaining ?? 0;
-
-      // Tok/s — llama.cpp may expose this in different fields
       const tps = s.tokens_per_second ?? s.t_token_generation_per_second ?? null;
       const promptTps = s.prompt_tokens_per_second ?? s.t_prompt_processing_per_second ?? null;
-
-      // KV cache utilization
       const kvPct = ctx > 0 ? ((nPast / ctx) * 100) : 0;
       const kvClass = kvPct > 90 ? "crit" : kvPct > 70 ? "warn" : "";
 
@@ -751,7 +937,6 @@ async function refreshSlotBar() {
       statsHtml += slotStat("KV cache", ctx > 0 ? `${nPast}/${ctx}` : "-");
       if (promptTps != null) statsHtml += slotStat("Prompt", `${promptTps.toFixed(1)} t/s`);
 
-      // Show generation timing if available
       const tGen = s.t_token_generation ?? null;
       const tPrompt = s.t_prompt_processing ?? null;
       if (tGen != null) statsHtml += slotStat("Gen time", `${(tGen / 1000).toFixed(1)}s`);
@@ -830,7 +1015,6 @@ async function sendPrompt() {
       if (sysPrompt) messages.push({ role: "system", content: sysPrompt });
       messages.push({ role: "user", content: promptText });
 
-      // Build OAI-compatible body — use max_tokens instead of n_predict
       const chatBody = {
         messages,
         temperature: params.temperature,
@@ -887,3 +1071,52 @@ $("#prompt-input").addEventListener("keydown", (e) => {
     sendPrompt();
   }
 });
+
+function escapeHtml(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+
+// ── Binary Auto-Detection ─────────────────────────────────────────
+function getResolvedBinary() {
+  return $("#server-bin-path").value.trim() || detectedBinary;
+}
+
+function showBinaryModal() {
+  const modal = $("#binary-modal");
+  const input = $("#binary-modal-input");
+  const status = $("#binary-modal-status");
+  modal.style.display = "flex";
+  input.value = "";
+  status.textContent = "";
+  input.focus();
+}
+
+$("#binary-modal-save").addEventListener("click", () => {
+  const path = $("#binary-modal-input").value.trim();
+  if (!path) {
+    $("#binary-modal-status").textContent = "Please enter a path";
+    return;
+  }
+  detectedBinary = path;
+  $("#server-bin-path").value = path;
+  $("#binary-modal").style.display = "none";
+});
+
+$("#binary-modal-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") $("#binary-modal-save").click();
+});
+
+// ── Init ──────────────────────────────────────────────────────────
+(async () => {
+  try {
+    detectedBinary = await invoke("detect_binary");
+    if (!$("#server-bin-path").value) {
+      $("#server-bin-path").value = detectedBinary;
+    }
+  } catch {
+    // not found — modal will show when user tries to start
+  }
+
+  refreshLocalModels();
+})();

@@ -14,39 +14,44 @@
 
 ## Features
 
-- **Launch & configure** llama-server with a full options panel -- context size, GPU layers, parallel slots, flash attention, and more
-- **Download models from HuggingFace** directly from the app with live search-as-you-type
-- **Browse loaded & available models** on the server, load/unload on the fly in router mode
+- **Download models from HuggingFace** -- live search, automatic split-file handling, download progress with ETA
+- **Run multiple servers simultaneously** -- each model gets its own random port, manage them all from one place
+- **Auto-detects llama-server** -- finds the binary on your PATH or common install locations
+- **Downloads to the standard HuggingFace cache** (`~/.cache/huggingface/hub/`) -- shared with `huggingface-cli`, LM Studio, and other tools
+- **Open llama-server's built-in web UI** in your browser with one click
+- **Configure server options** -- context size, GPU layers, flash attention, parallel slots, and more
 - **Tune parameters** with interactive sliders and presets (Creative, Balanced, Precise, Deterministic)
 - **Playground** for completions and chat with performance metrics
+- **Live server log** -- see model loading progress, layer offloading, and errors in real time
 - **Slot monitor** with real-time polling
-
-## Server Configuration
-
-Configure and launch llama-server instances with dedicated controls for all common options -- no need to remember CLI flags.
-
-<p align="center">
-  <img src="demo0.png" alt="Server configuration" width="720" />
-</p>
-
-- **Context & Memory** -- context size, GPU layers, flash attention
-- **Slots & Parallelism** -- parallel slots, slot monitoring, continuous batching
-- **Endpoints & API** -- expose properties, enable metrics, listen host
-- Connect to an existing server or launch a new one and auto-connect
 
 ## Model Management
 
-Search HuggingFace for GGUF models and start a server with one click. Browse models already loaded on the server, or load/unload them in router mode.
+Search HuggingFace for GGUF models, download them, and start serving with a few clicks. Split models (multi-file GGUFs) are detected and downloaded as a bundle automatically.
 
 <p align="center">
-  <img src="demo1.png" alt="HuggingFace model download" width="720" />
+  <img src="demo0.png" alt="Model download and serve" width="720" />
 </p>
 
 - **Live search** -- type to search HuggingFace for GGUF models, see download counts and likes
-- **One-click download & start** -- select a model, hit "Download & Start", and auto-connect when ready
+- **Smart file picker** -- shows available quantizations with file sizes, groups split models into bundles
+- **Download progress** -- real-time progress bar with ETA, visible from any tab
 - **Popular model suggestions** -- quick-pick chips for Gemma, Qwen, Llama, Mistral, Phi, and more
-- **Available models list** -- see all loaded and available models on the server with status badges
-- **Router mode** -- load and unload models dynamically without restarting the server
+- **Multiple servers** -- run several models at once, each on its own port. Connect, open in browser, or stop individually
+
+## Server Configuration
+
+Configure llama-server options from the Server tab. Settings apply when starting any model.
+
+<p align="center">
+  <img src="demo1.png" alt="Server configuration" width="720" />
+</p>
+
+- **Context & Memory** -- context size, GPU layers, batch size, flash attention
+- **Slots & Parallelism** -- parallel slots, slot monitoring, continuous batching
+- **Endpoints & API** -- expose properties, enable metrics, listen host
+- **Server log** -- live stderr output from the running server process
+- **Running servers list** -- see all active servers with stop/open/connect controls
 
 ## Install
 

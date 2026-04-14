@@ -148,6 +148,64 @@ button {
   border-bottom-color: var(--accent);
 }
 
+/* Download Banner */
+.download-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1.25rem;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  border-bottom: 1px solid var(--border);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+.download-banner.hidden { display: none; }
+.download-banner.success { background: color-mix(in srgb, var(--green) 12%, var(--surface)); }
+.download-banner.error { background: color-mix(in srgb, var(--red) 12%, var(--surface)); }
+.download-banner-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1s infinite;
+  flex-shrink: 0;
+}
+.download-banner.success .download-banner-dot { background: var(--green); animation: none; }
+.download-banner.error .download-banner-dot { background: var(--red); animation: none; }
+.download-banner-eta {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+.download-bar-wrap {
+  flex: 1;
+  max-width: 280px;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.download-bar-wrap.hidden { display: none; }
+.download-bar {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  width: 0%;
+  transition: width 0.3s ease;
+}
+.download-banner.success .download-bar { background: var(--green); }
+.download-bar-pct {
+  position: absolute;
+  right: -3rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  width: 2.5rem;
+  text-align: right;
+}
+
 /* Tab Panels */
 #content {
   padding: 1.25rem;
@@ -221,6 +279,22 @@ code {
   border-radius: 3px;
   font-family: var(--mono);
   font-size: 0.8rem;
+}
+
+/* Server Log */
+.server-log {
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 0.75rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 /* Server Properties */
@@ -418,6 +492,58 @@ input[type="checkbox"] {
   background: rgba(239, 68, 68, 0.15);
 }
 
+/* Running server cards */
+.running-server-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 0.5rem;
+  gap: 0.75rem;
+}
+.running-server-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+}
+.running-server-model {
+  font-weight: 600;
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.running-server-port {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.running-server-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+.running-server-actions button {
+  font-size: 0.75rem;
+  padding: 0.3rem 0.6rem;
+}
+.open-btn {
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  color: var(--accent);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.open-btn:hover {
+  background: rgba(99, 102, 241, 0.12);
+}
+
 /* Server options grid */
 .server-opts-grid {
   display: grid;
@@ -540,6 +666,34 @@ input[type="checkbox"] {
   border-color: var(--accent);
   color: var(--accent);
   background: rgba(99, 102, 241, 0.08);
+}
+
+/* HF File Picker */
+.hf-files-header {
+  font-size: 0.8rem;
+  margin-bottom: 0.5rem;
+}
+.hf-file-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 0.35rem;
+  background: var(--bg);
+}
+.hf-file-name {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hf-file-size {
+  font-size: 0.75rem;
+  white-space: nowrap;
 }
 
 /* Models */
