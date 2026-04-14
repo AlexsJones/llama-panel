@@ -53,6 +53,14 @@ Configure llama-server options from the Server tab. Settings apply when starting
 - **Server log** -- live stderr output from the running server process
 - **Running servers list** -- see all active servers with stop/open/connect controls
 
+## Integrations
+
+- **OpenCode support** – OpenCode can connect directly to your llama-server instance via the integration panel, enabling seamless model management and inference from within the OpenCode IDE.
+
+<p align="center">
+  <img src="demo2.png" alt="Integration panel" width="720" />
+</p>
+
 ## Install
 
 ### Homebrew (recommended)
