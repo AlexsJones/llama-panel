@@ -310,10 +310,7 @@ async fn detect_binary() -> Result<String, String> {
 // ── Server Process Management ───────────────────────────────────────
 
 #[tauri::command]
-async fn stop_server(
-    state: tauri::State<'_, OwnedServers>,
-    port: u16,
-) -> Result<String, String> {
+async fn stop_server(state: tauri::State<'_, OwnedServers>, port: u16) -> Result<String, String> {
     let mut servers = state.0.lock().unwrap();
     let idx = servers
         .iter()
@@ -338,14 +335,16 @@ async fn stop_all_servers(state: tauri::State<'_, OwnedServers>) -> Result<Strin
 }
 
 #[tauri::command]
-async fn list_servers(state: tauri::State<'_, OwnedServers>) -> Result<Vec<ServerInstance>, String> {
+async fn list_servers(
+    state: tauri::State<'_, OwnedServers>,
+) -> Result<Vec<ServerInstance>, String> {
     Ok(state.0.lock().unwrap().clone())
 }
 
 #[tauri::command]
 async fn pick_random_port() -> Result<u16, String> {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0")
-        .map_err(|e| format!("Failed to bind: {e}"))?;
+    let listener =
+        std::net::TcpListener::bind("127.0.0.1:0").map_err(|e| format!("Failed to bind: {e}"))?;
     Ok(listener.local_addr().unwrap().port())
 }
 
@@ -483,7 +482,9 @@ async fn list_hf_files(repo: String) -> Result<serde_json::Value, String> {
 
     // Get file tree
     let resp: serde_json::Value = c
-        .get(format!("https://huggingface.co/api/models/{repo}/tree/main"))
+        .get(format!(
+            "https://huggingface.co/api/models/{repo}/tree/main"
+        ))
         .timeout(Duration::from_secs(10))
         .send()
         .await
@@ -534,20 +535,20 @@ async fn list_hf_files(repo: String) -> Result<serde_json::Value, String> {
             .unwrap_or("")
             .to_string();
 
-        bundles
-            .entry(key)
-            .or_default()
-            .push(serde_json::json!({
-                "path": path,
-                "size": f["size"].as_u64().unwrap_or(0),
-                "hash": blob_hash,
-            }));
+        bundles.entry(key).or_default().push(serde_json::json!({
+            "path": path,
+            "size": f["size"].as_u64().unwrap_or(0),
+            "hash": blob_hash,
+        }));
     }
 
     // Sort files within each bundle by name
     for files in bundles.values_mut() {
         files.sort_by(|a, b| {
-            a["path"].as_str().unwrap_or("").cmp(b["path"].as_str().unwrap_or(""))
+            a["path"]
+                .as_str()
+                .unwrap_or("")
+                .cmp(b["path"].as_str().unwrap_or(""))
         });
     }
 
@@ -616,7 +617,8 @@ async fn download_hf_model(
     let refs_dir = rdir.join("refs");
 
     std::fs::create_dir_all(&blobs_dir).map_err(|e| format!("Failed to create blobs dir: {e}"))?;
-    std::fs::create_dir_all(&snap_dir).map_err(|e| format!("Failed to create snapshot dir: {e}"))?;
+    std::fs::create_dir_all(&snap_dir)
+        .map_err(|e| format!("Failed to create snapshot dir: {e}"))?;
     std::fs::create_dir_all(&refs_dir).map_err(|e| format!("Failed to create refs dir: {e}"))?;
 
     // Write refs/main
@@ -664,10 +666,7 @@ async fn download_hf_model(
 
     // Use known sizes from the API for accurate progress
     let total_files = files.len();
-    let grand_total: u64 = files
-        .iter()
-        .map(|f| f["size"].as_u64().unwrap_or(0))
-        .sum();
+    let grand_total: u64 = files.iter().map(|f| f["size"].as_u64().unwrap_or(0)).sum();
     // Already-downloaded bytes count toward progress
     let already_done: u64 = files
         .iter()
@@ -732,8 +731,7 @@ async fn download_hf_model(
                 .open(&tmp)
                 .map_err(|e| format!("Failed to open file: {e}"))?
         } else {
-            std::fs::File::create(&tmp)
-                .map_err(|e| format!("Failed to create file: {e}"))?
+            std::fs::File::create(&tmp).map_err(|e| format!("Failed to create file: {e}"))?
         };
 
         let file_label = format!(
@@ -879,9 +877,7 @@ async fn list_local_models() -> Result<Vec<LocalModel>, String> {
                 continue;
             }
             // Follow symlink to get real file size
-            let size = std::fs::metadata(file.path())
-                .map(|m| m.len())
-                .unwrap_or(0);
+            let size = std::fs::metadata(file.path()).map(|m| m.len()).unwrap_or(0);
 
             let key = if split_re.is_match(&fname) {
                 split_re.replace(&fname, ".gguf").to_string()
