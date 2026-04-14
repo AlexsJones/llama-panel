@@ -115,6 +115,7 @@ async function connectToServer(url) {
     renderProps(result.props);
     syncServerSettings(result.props);
     startSlotPolling();
+    renderRunningServers();
   } catch (e) {
     connected = false;
     setStatus("disconnected", `Failed: ${e}`);
@@ -504,9 +505,10 @@ let downloadUnlisten = null;
 
 function setDownloadBanner(text, state = "active") {
   const banner = $("#download-banner");
-  banner.classList.remove("hidden", "success", "error");
+  banner.classList.remove("hidden", "success", "error", "paused");
   if (state === "success") banner.classList.add("success");
   else if (state === "error") banner.classList.add("error");
+  else if (state === "paused") banner.classList.add("paused");
   $("#download-banner-text").textContent = text;
   if (state === "error") {
     $("#download-banner-bar-wrap").classList.add("hidden");
@@ -539,6 +541,46 @@ function formatEta(seconds) {
 }
 
 // ── Model Download ────────────────────────────────────────────────
+let downloadPaused = false;
+
+// Track current download info for resume
+let currentDownload = null;
+
+function showDownloadControls(show) {
+  $("#download-controls").classList.toggle("hidden", !show);
+  $("#btn-dl-pause").classList.toggle("hidden", downloadPaused);
+  $("#btn-dl-resume").classList.toggle("hidden", !downloadPaused);
+}
+
+$("#btn-dl-pause").addEventListener("click", async () => {
+  downloadPaused = true;
+  await invoke("pause_download");
+  $("#btn-dl-pause").classList.add("hidden");
+  $("#btn-dl-resume").classList.remove("hidden");
+  $("#download-banner").classList.add("paused");
+});
+
+$("#btn-dl-resume").addEventListener("click", async () => {
+  downloadPaused = false;
+  await invoke("resume_download");
+  $("#btn-dl-resume").classList.add("hidden");
+  $("#btn-dl-pause").classList.remove("hidden");
+  $("#download-banner").classList.remove("paused");
+});
+
+$("#btn-dl-cancel").addEventListener("click", async () => {
+  downloadPaused = false;
+  await invoke("cancel_download");
+  $("#download-banner").classList.remove("paused");
+});
+
+// Resume a cancelled download
+async function resumeCancelledDownload() {
+  if (!currentDownload) return;
+  const { repo, commit, files, displayName } = currentDownload;
+  downloadModel(repo, commit, files, displayName);
+}
+
 async function downloadModel(repo, commit, files, displayName) {
   const statusEl = $("#hf-download-status");
   const label = displayName || files[0]?.path || "model";
@@ -546,22 +588,25 @@ async function downloadModel(repo, commit, files, displayName) {
   statusEl.textContent = `Downloading ${label}${parts}...`;
   setDownloadBanner(`Downloading ${label}${parts}...`);
   downloadStartTime = Date.now();
+  downloadPaused = false;
+  currentDownload = { repo, commit, files, displayName };
+  showDownloadControls(true);
 
   // Listen for download progress events
   if (downloadUnlisten) downloadUnlisten();
   downloadUnlisten = await listen("download-progress", (event) => {
-    const { pct, downloaded, total, file } = event.payload;
-    if (pct >= 100) return; // final event handled by the await
+    const { pct, downloaded, total, file, paused } = event.payload;
+    if (pct >= 100) return;
     const elapsed = (Date.now() - downloadStartTime) / 1000;
     const fileLabel = file ? ` (${file})` : "";
+    const pauseLabel = paused ? " — PAUSED" : "";
     if (total > 0) {
-      const etaSec = pct > 0 ? (elapsed / pct) * (100 - pct) : 0;
-      setDownloadProgress(pct, `${formatSize(downloaded)} / ${formatSize(total)}  ${formatEta(etaSec)}`);
-      statusEl.textContent = `Downloading${fileLabel}... ${pct.toFixed(1)}%`;
+      const etaSec = (!paused && pct > 0) ? (elapsed / pct) * (100 - pct) : 0;
+      setDownloadProgress(pct, `${formatSize(downloaded)} / ${formatSize(total)}  ${paused ? "Paused" : formatEta(etaSec)}`);
+      statusEl.textContent = `Downloading${fileLabel}... ${pct.toFixed(1)}%${pauseLabel}`;
     } else {
-      // Unknown total size — show bytes downloaded
-      setDownloadBanner(`Downloading${fileLabel}... ${formatSize(downloaded)}`);
-      statusEl.textContent = `Downloading${fileLabel}... ${formatSize(downloaded)}`;
+      setDownloadBanner(`Downloading${fileLabel}... ${formatSize(downloaded)}${pauseLabel}`);
+      statusEl.textContent = `Downloading${fileLabel}... ${formatSize(downloaded)}${pauseLabel}`;
     }
   });
 
@@ -569,6 +614,8 @@ async function downloadModel(repo, commit, files, displayName) {
     const localPath = await invoke("download_hf_model", { repo, commit, files });
     if (downloadUnlisten) { downloadUnlisten(); downloadUnlisten = null; }
 
+    showDownloadControls(false);
+    currentDownload = null;
     setDownloadProgress(100, "");
     const elapsed = ((Date.now() - downloadStartTime) / 1000).toFixed(0);
     const msg = `Downloaded ${label}${parts} (${elapsed}s)`;
@@ -576,14 +623,31 @@ async function downloadModel(repo, commit, files, displayName) {
     setDownloadBanner(msg, "success");
     setTimeout(hideDownloadBanner, 5000);
 
-    // Hide file picker, refresh local models
     $("#hf-files-list").style.display = "none";
     refreshLocalModels();
   } catch (e) {
     if (downloadUnlisten) { downloadUnlisten(); downloadUnlisten = null; }
-    const errMsg = `Download failed: ${e}`;
-    statusEl.textContent = errMsg;
-    setDownloadBanner(errMsg, "error");
+    showDownloadControls(false);
+    currentDownload = null;
+    const cancelled = String(e).includes("cancelled");
+    if (cancelled) {
+      statusEl.textContent = "Download paused — click Resume to continue";
+      setDownloadBanner("Download paused", "paused");
+      // Show only resume and cancel
+      $("#download-controls").classList.remove("hidden");
+      $("#btn-dl-pause").classList.add("hidden");
+      $("#btn-dl-resume").classList.remove("hidden");
+      // Re-wire resume to restart the download (will pick up from partial file)
+      $("#btn-dl-resume").onclick = () => {
+        $("#btn-dl-resume").onclick = null;
+        resumeCancelledDownload();
+      };
+      // Keep currentDownload so resume works
+      return;
+    }
+    currentDownload = null;
+    statusEl.textContent = `Download failed: ${e}`;
+    setDownloadBanner(`Download failed: ${e}`, "error");
   }
 }
 
@@ -761,19 +825,23 @@ function renderRunningServers() {
   }
 
   const html = runningServers.map((srv) => {
+    const isActive = serverUrl === `http://localhost:${srv.port}`;
     const dotClass = srv.status === "ready" ? "connected" : "loading";
     const statusLabel = srv.status === "ready" ? "" : " (loading...)";
+    const activeClass = isActive ? " active-server" : "";
+    const activeLabel = isActive ? `<span class="active-server-badge">ACTIVE</span>` : "";
     const openBtn = srv.status === "ready"
       ? `<button class="open-btn srv-open" data-port="${srv.port}">Open UI</button>`
       : "";
-    const connectBtn = srv.status === "ready"
+    const connectBtn = srv.status === "ready" && !isActive
       ? `<button class="secondary-btn srv-connect" data-port="${srv.port}" style="font-size:0.75rem;padding:0.3rem 0.6rem">Connect</button>`
       : "";
-    return `<div class="running-server-card">
+    return `<div class="running-server-card${activeClass}">
       <div class="running-server-info">
         <span class="status-dot ${dotClass}"></span>
         <span class="running-server-model" title="${escapeHtml(srv.name)}">${escapeHtml(srv.name)}${statusLabel}</span>
         <span class="running-server-port">port ${srv.port}</span>
+        ${activeLabel}
       </div>
       <div class="running-server-actions">
         ${connectBtn}

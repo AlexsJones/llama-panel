@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -30,6 +31,12 @@ struct ServerInstance {
 
 /// Tracks all server processes we've spawned
 struct OwnedServers(Mutex<Vec<ServerInstance>>);
+
+/// Controls download pause/cancel
+struct DownloadControl {
+    paused: AtomicBool,
+    cancelled: AtomicBool,
+}
 
 fn client() -> reqwest::Client {
     reqwest::Client::builder()
@@ -566,6 +573,25 @@ async fn list_hf_files(repo: String) -> Result<serde_json::Value, String> {
 
 // ── Model Download ──────────────────────────────────────────────────
 
+#[tauri::command]
+async fn pause_download(state: tauri::State<'_, DownloadControl>) -> Result<(), String> {
+    state.paused.store(true, Ordering::SeqCst);
+    Ok(())
+}
+
+#[tauri::command]
+async fn resume_download(state: tauri::State<'_, DownloadControl>) -> Result<(), String> {
+    state.paused.store(false, Ordering::SeqCst);
+    Ok(())
+}
+
+#[tauri::command]
+async fn cancel_download(state: tauri::State<'_, DownloadControl>) -> Result<(), String> {
+    state.cancelled.store(true, Ordering::SeqCst);
+    state.paused.store(false, Ordering::SeqCst); // unblock if paused
+    Ok(())
+}
+
 /// Download one or more files from a HuggingFace repo into the HF hub cache.
 /// Files are stored as blobs/{sha256} with symlinks in snapshots/{commit}/{filename}.
 /// `files` is a JSON array of [{path, hash}, ...].
@@ -573,11 +599,16 @@ async fn list_hf_files(repo: String) -> Result<serde_json::Value, String> {
 #[tauri::command]
 async fn download_hf_model(
     app: tauri::AppHandle,
+    dl_ctrl: tauri::State<'_, DownloadControl>,
     repo: String,
     commit: String,
     files: Vec<serde_json::Value>,
 ) -> Result<String, String> {
     use tauri::Emitter;
+
+    // Reset control flags
+    dl_ctrl.cancelled.store(false, Ordering::SeqCst);
+    dl_ctrl.paused.store(false, Ordering::SeqCst);
 
     let rdir = repo_dir(&repo);
     let blobs_dir = rdir.join("blobs");
@@ -650,34 +681,61 @@ async fn download_hf_model(
     let mut last_emit = std::time::Instant::now();
 
     for (file_idx, dlf) in to_download.iter().enumerate() {
+        if dl_ctrl.cancelled.load(Ordering::SeqCst) {
+            return Err("Download cancelled".to_string());
+        }
+
+        let blob_path = blobs_dir.join(&dlf.hash);
+        let tmp = blobs_dir.join(format!("{}.downloadInProgress", dlf.hash));
+
+        // Check for partial download to resume
+        let existing_bytes = if tmp.exists() {
+            tmp.metadata().map(|m| m.len()).unwrap_or(0)
+        } else {
+            0
+        };
+
         let url = format!(
             "https://huggingface.co/{repo}/resolve/main/{}",
             dlf.filename
         );
 
-        let mut resp = dl_client
-            .get(&url)
+        // Request with Range header for resume
+        let mut req = dl_client.get(&url);
+        if existing_bytes > 0 {
+            req = req.header("Range", format!("bytes={existing_bytes}-"));
+        }
+
+        let mut resp = req
             .send()
             .await
             .map_err(|e| format!("Download failed for {}: {e}", dlf.filename))?;
 
-        if !resp.status().is_success() {
+        let status = resp.status();
+        if !status.is_success() && status != reqwest::StatusCode::PARTIAL_CONTENT {
             return Err(format!(
                 "Download failed for {}: HTTP {}",
-                dlf.filename,
-                resp.status()
+                dlf.filename, status
             ));
         }
 
-        // Write to blobs/{hash}
-        let blob_path = blobs_dir.join(&dlf.hash);
-        let tmp = blobs_dir.join(format!("{}.downloadInProgress", dlf.hash));
-        let mut file =
-            std::fs::File::create(&tmp).map_err(|e| format!("Failed to create file: {e}"))?;
+        // If server doesn't support Range (200 instead of 206), start from scratch
+        let resumed = status == reqwest::StatusCode::PARTIAL_CONTENT;
+        let file_offset = if resumed { existing_bytes } else { 0 };
+        cumulative += file_offset;
 
         use std::io::Write;
 
-        // Label shows position within total files, not just files-to-download
+        let mut file = if resumed {
+            std::fs::OpenOptions::new()
+                .append(true)
+                .open(&tmp)
+                .map_err(|e| format!("Failed to open file: {e}"))?
+        } else {
+            std::fs::File::create(&tmp)
+                .map_err(|e| format!("Failed to create file: {e}"))?
+        };
+
         let file_label = format!(
             "{} ({}/{})",
             dlf.filename,
@@ -685,31 +743,61 @@ async fn download_hf_model(
             total_files
         );
 
-        while let Some(chunk) = resp
-            .chunk()
-            .await
-            .map_err(|e| format!("Download error: {e}"))?
-        {
-            file.write_all(&chunk)
-                .map_err(|e| format!("Write error: {e}"))?;
-            cumulative += chunk.len() as u64;
+        loop {
+            // Check cancel
+            if dl_ctrl.cancelled.load(Ordering::SeqCst) {
+                file.flush().ok();
+                return Err("Download cancelled".to_string());
+            }
 
-            if last_emit.elapsed() > Duration::from_millis(250) {
-                let pct = if grand_total > 0 {
-                    (cumulative as f64 / grand_total as f64 * 100.0).min(99.9)
-                } else {
-                    0.0
-                };
+            // Check pause — spin-wait (with sleep to avoid busy loop)
+            while dl_ctrl.paused.load(Ordering::SeqCst) {
+                if dl_ctrl.cancelled.load(Ordering::SeqCst) {
+                    file.flush().ok();
+                    return Err("Download cancelled".to_string());
+                }
                 let _ = app.emit(
                     "download-progress",
                     serde_json::json!({
                         "downloaded": cumulative,
                         "total": grand_total,
-                        "pct": pct,
+                        "pct": if grand_total > 0 { (cumulative as f64 / grand_total as f64 * 100.0).min(99.9) } else { 0.0 },
                         "file": file_label,
+                        "paused": true,
                     }),
                 );
-                last_emit = std::time::Instant::now();
+                std::thread::sleep(Duration::from_millis(500));
+            }
+
+            match resp.chunk().await {
+                Ok(Some(chunk)) => {
+                    file.write_all(&chunk)
+                        .map_err(|e| format!("Write error: {e}"))?;
+                    cumulative += chunk.len() as u64;
+
+                    if last_emit.elapsed() > Duration::from_millis(250) {
+                        let pct = if grand_total > 0 {
+                            (cumulative as f64 / grand_total as f64 * 100.0).min(99.9)
+                        } else {
+                            0.0
+                        };
+                        let _ = app.emit(
+                            "download-progress",
+                            serde_json::json!({
+                                "downloaded": cumulative,
+                                "total": grand_total,
+                                "pct": pct,
+                                "file": file_label,
+                            }),
+                        );
+                        last_emit = std::time::Instant::now();
+                    }
+                }
+                Ok(None) => break,
+                Err(e) => {
+                    file.flush().ok();
+                    return Err(format!("Download error: {e}"));
+                }
             }
         }
 
@@ -720,7 +808,7 @@ async fn download_hf_model(
         std::fs::rename(&tmp, &blob_path)
             .map_err(|e| format!("Failed to finalize {}: {e}", dlf.filename))?;
 
-        // Create symlink: snapshots/{commit}/{filename} → ../../blobs/{hash}
+        // Create symlink
         let snap_link = snap_dir.join(&dlf.filename);
         if !snap_link.exists() {
             let rel = format!("../../blobs/{}", dlf.hash);
@@ -904,6 +992,10 @@ fn urlencoded(s: &str) -> String {
 pub fn run() {
     tauri::Builder::default()
         .manage(OwnedServers(Mutex::new(Vec::new())))
+        .manage(DownloadControl {
+            paused: AtomicBool::new(false),
+            cancelled: AtomicBool::new(false),
+        })
         .invoke_handler(tauri::generate_handler![
             connect,
             get_health,
@@ -922,6 +1014,9 @@ pub fn run() {
             start_server,
             search_hf_models,
             list_hf_files,
+            pause_download,
+            resume_download,
+            cancel_download,
             download_hf_model,
             list_local_models,
             delete_local_model,

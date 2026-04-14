@@ -21,8 +21,6 @@
   <nav id="tabs">
     <button class="tab active" data-tab="models">Models</button>
     <button class="tab" data-tab="server">Server</button>
-    <button class="tab" data-tab="parameters">Parameters</button>
-    <button class="tab" data-tab="playground">Playground</button>
   </nav>
 
   <!-- Global Download Status Banner -->
@@ -33,6 +31,11 @@
     <div id="download-banner-bar-wrap" class="download-bar-wrap hidden">
       <div id="download-banner-bar" class="download-bar"></div>
       <span id="download-banner-pct" class="download-bar-pct"></span>
+    </div>
+    <div id="download-controls" class="download-controls hidden">
+      <button id="btn-dl-pause" class="dl-ctrl-btn" title="Pause">&#x23F8;</button>
+      <button id="btn-dl-resume" class="dl-ctrl-btn hidden" title="Resume">&#x25B6;</button>
+      <button id="btn-dl-cancel" class="dl-ctrl-btn" title="Cancel">&times;</button>
     </div>
   </div>
 
@@ -91,6 +94,7 @@
     <!-- Server Tab -->
     <section id="tab-server" class="tab-panel">
       <div class="panel-grid">
+        <!-- Running Servers + Server Selector -->
         <div class="card wide">
           <div class="card-header">
             <h2>Running Servers</h2>
@@ -100,6 +104,8 @@
             <p class="muted">No servers running. Start a model from the Models tab.</p>
           </div>
         </div>
+
+        <!-- Server Info (for connected server) -->
         <div class="card">
           <h2>Active Model</h2>
           <div id="model-info" class="info-grid">
@@ -112,10 +118,113 @@
             <p class="muted">Start a model to see slot activity</p>
           </div>
         </div>
+
+        <!-- Playground -->
         <div class="card wide">
-          <h2>Server Settings</h2>
+          <h2>Playground</h2>
+          <div class="playground-layout">
+            <div class="playground-input">
+              <div class="mode-toggle">
+                <button class="mode-btn active" data-mode="completion">Completion</button>
+                <button class="mode-btn" data-mode="chat">Chat</button>
+              </div>
+              <textarea id="prompt-input" placeholder="Enter your prompt here..."></textarea>
+              <div id="chat-system-row" style="display:none">
+                <label for="system-prompt">System prompt</label>
+                <textarea id="system-prompt" rows="2" placeholder="You are a helpful assistant."></textarea>
+              </div>
+              <div class="playground-actions">
+                <button id="btn-send" class="primary-btn" disabled>Send</button>
+                <button id="btn-cancel" class="danger-btn" style="display:none">Cancel</button>
+                <span id="token-count" class="muted"></span>
+              </div>
+            </div>
+            <div class="playground-output">
+              <pre id="response-output"></pre>
+              <div id="response-meta" class="muted"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Parameters -->
+        <div class="card">
+          <h2>Sampling</h2>
+          <div class="param-group">
+            <div class="param-row">
+              <label for="p-temperature">Temperature</label>
+              <input type="range" id="p-temperature" min="0" max="2" step="0.05" value="0.8" />
+              <input type="number" class="param-val" id="p-temperature-val" min="0" max="2" step="0.05" value="0.8" />
+            </div>
+            <div class="param-row">
+              <label for="p-top-k">Top-K</label>
+              <input type="range" id="p-top-k" min="0" max="200" step="1" value="40" />
+              <input type="number" class="param-val" id="p-top-k-val" min="0" max="200" step="1" value="40" />
+            </div>
+            <div class="param-row">
+              <label for="p-top-p">Top-P</label>
+              <input type="range" id="p-top-p" min="0" max="1" step="0.01" value="0.95" />
+              <input type="number" class="param-val" id="p-top-p-val" min="0" max="1" step="0.01" value="0.95" />
+            </div>
+            <div class="param-row">
+              <label for="p-min-p">Min-P</label>
+              <input type="range" id="p-min-p" min="0" max="1" step="0.01" value="0.05" />
+              <input type="number" class="param-val" id="p-min-p-val" min="0" max="1" step="0.01" value="0.05" />
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Penalties &amp; Generation</h2>
+          <div class="param-group">
+            <div class="param-row">
+              <label for="p-repeat-penalty">Repeat Penalty</label>
+              <input type="range" id="p-repeat-penalty" min="0" max="2" step="0.05" value="1.1" />
+              <input type="number" class="param-val" id="p-repeat-penalty-val" min="0" max="2" step="0.05" value="1.1" />
+            </div>
+            <div class="param-row">
+              <label for="p-presence-penalty">Presence Penalty</label>
+              <input type="range" id="p-presence-penalty" min="-2" max="2" step="0.05" value="0" />
+              <input type="number" class="param-val" id="p-presence-penalty-val" min="-2" max="2" step="0.05" value="0" />
+            </div>
+            <div class="param-row">
+              <label for="p-frequency-penalty">Frequency Penalty</label>
+              <input type="range" id="p-frequency-penalty" min="-2" max="2" step="0.05" value="0" />
+              <input type="number" class="param-val" id="p-frequency-penalty-val" min="-2" max="2" step="0.05" value="0" />
+            </div>
+            <div class="param-row">
+              <label for="p-n-predict">Max Tokens</label>
+              <input type="range" id="p-n-predict" min="-1" max="4096" step="1" value="256" />
+              <input type="number" class="param-val" id="p-n-predict-val" min="-1" max="32768" step="1" value="256" />
+            </div>
+            <div class="param-row">
+              <label for="p-seed">Seed (-1 = random)</label>
+              <input type="number" class="param-val wide-input" id="p-seed" value="-1" />
+            </div>
+            <div class="param-row">
+              <label for="p-stop">Stop sequences</label>
+              <input type="text" class="param-val wide-input" id="p-stop" placeholder='e.g. ["\n", "User:"]' />
+            </div>
+            <div class="param-row">
+              <label for="p-cache-prompt">Cache prompt</label>
+              <input type="checkbox" id="p-cache-prompt" checked />
+            </div>
+          </div>
+          <div class="preset-buttons" style="margin-top: 0.75rem">
+            <button class="preset-btn" data-preset="creative">Creative</button>
+            <button class="preset-btn" data-preset="balanced">Balanced</button>
+            <button class="preset-btn" data-preset="precise">Precise</button>
+            <button class="preset-btn" data-preset="deterministic">Deterministic</button>
+          </div>
+          <div class="param-group" style="margin-top: 0.75rem">
+            <button id="btn-load-defaults" class="secondary-btn">Load Server Defaults</button>
+            <button id="btn-reset-params" class="secondary-btn">Reset to Defaults</button>
+          </div>
+        </div>
+
+        <!-- Server Settings (for launching new servers) -->
+        <div class="card wide">
+          <h2>Launch Settings</h2>
           <p class="muted" style="margin-bottom: 0.75rem">
-            Configure server options. These apply when starting a model from the Models tab.
+            These settings apply when starting a model from the Models tab.
           </p>
           <div class="param-group">
             <div class="param-row">
@@ -190,6 +299,8 @@
             </div>
           </div>
         </div>
+
+        <!-- Server Properties & Log -->
         <div class="card wide">
           <h2>Server Properties</h2>
           <div id="props-info">
@@ -199,120 +310,6 @@
         <div class="card wide">
           <h2>Server Log</h2>
           <pre id="server-log" class="server-log"><span class="muted">No output yet</span></pre>
-        </div>
-      </div>
-    </section>
-
-    <!-- Parameters Tab -->
-    <section id="tab-parameters" class="tab-panel">
-      <div class="panel-grid">
-        <div class="card">
-          <h2>Sampling</h2>
-          <div class="param-group">
-            <div class="param-row">
-              <label for="p-temperature">Temperature</label>
-              <input type="range" id="p-temperature" min="0" max="2" step="0.05" value="0.8" />
-              <input type="number" class="param-val" id="p-temperature-val" min="0" max="2" step="0.05" value="0.8" />
-            </div>
-            <div class="param-row">
-              <label for="p-top-k">Top-K</label>
-              <input type="range" id="p-top-k" min="0" max="200" step="1" value="40" />
-              <input type="number" class="param-val" id="p-top-k-val" min="0" max="200" step="1" value="40" />
-            </div>
-            <div class="param-row">
-              <label for="p-top-p">Top-P</label>
-              <input type="range" id="p-top-p" min="0" max="1" step="0.01" value="0.95" />
-              <input type="number" class="param-val" id="p-top-p-val" min="0" max="1" step="0.01" value="0.95" />
-            </div>
-            <div class="param-row">
-              <label for="p-min-p">Min-P</label>
-              <input type="range" id="p-min-p" min="0" max="1" step="0.01" value="0.05" />
-              <input type="number" class="param-val" id="p-min-p-val" min="0" max="1" step="0.01" value="0.05" />
-            </div>
-          </div>
-        </div>
-        <div class="card">
-          <h2>Penalties</h2>
-          <div class="param-group">
-            <div class="param-row">
-              <label for="p-repeat-penalty">Repeat Penalty</label>
-              <input type="range" id="p-repeat-penalty" min="0" max="2" step="0.05" value="1.1" />
-              <input type="number" class="param-val" id="p-repeat-penalty-val" min="0" max="2" step="0.05" value="1.1" />
-            </div>
-            <div class="param-row">
-              <label for="p-presence-penalty">Presence Penalty</label>
-              <input type="range" id="p-presence-penalty" min="-2" max="2" step="0.05" value="0" />
-              <input type="number" class="param-val" id="p-presence-penalty-val" min="-2" max="2" step="0.05" value="0" />
-            </div>
-            <div class="param-row">
-              <label for="p-frequency-penalty">Frequency Penalty</label>
-              <input type="range" id="p-frequency-penalty" min="-2" max="2" step="0.05" value="0" />
-              <input type="number" class="param-val" id="p-frequency-penalty-val" min="-2" max="2" step="0.05" value="0" />
-            </div>
-          </div>
-        </div>
-        <div class="card">
-          <h2>Generation</h2>
-          <div class="param-group">
-            <div class="param-row">
-              <label for="p-n-predict">Max Tokens</label>
-              <input type="range" id="p-n-predict" min="-1" max="4096" step="1" value="256" />
-              <input type="number" class="param-val" id="p-n-predict-val" min="-1" max="32768" step="1" value="256" />
-            </div>
-            <div class="param-row">
-              <label for="p-seed">Seed (-1 = random)</label>
-              <input type="number" class="param-val wide-input" id="p-seed" value="-1" />
-            </div>
-            <div class="param-row">
-              <label for="p-stop">Stop sequences</label>
-              <input type="text" class="param-val wide-input" id="p-stop" placeholder='e.g. ["\n", "User:"]' />
-            </div>
-            <div class="param-row">
-              <label for="p-cache-prompt">Cache prompt</label>
-              <input type="checkbox" id="p-cache-prompt" checked />
-            </div>
-          </div>
-        </div>
-        <div class="card">
-          <h2>Presets</h2>
-          <div class="preset-buttons">
-            <button class="preset-btn" data-preset="creative">Creative</button>
-            <button class="preset-btn" data-preset="balanced">Balanced</button>
-            <button class="preset-btn" data-preset="precise">Precise</button>
-            <button class="preset-btn" data-preset="deterministic">Deterministic</button>
-          </div>
-          <div class="param-group" style="margin-top: 1rem">
-            <button id="btn-load-defaults" class="secondary-btn">Load Server Defaults</button>
-            <button id="btn-reset-params" class="secondary-btn">Reset to Defaults</button>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Playground Tab -->
-    <section id="tab-playground" class="tab-panel">
-      <div class="playground-layout">
-        <div class="card playground-input">
-          <h2>Prompt</h2>
-          <div class="mode-toggle">
-            <button class="mode-btn active" data-mode="completion">Completion</button>
-            <button class="mode-btn" data-mode="chat">Chat</button>
-          </div>
-          <textarea id="prompt-input" placeholder="Enter your prompt here..."></textarea>
-          <div id="chat-system-row" style="display:none">
-            <label for="system-prompt">System prompt</label>
-            <textarea id="system-prompt" rows="2" placeholder="You are a helpful assistant."></textarea>
-          </div>
-          <div class="playground-actions">
-            <button id="btn-send" class="primary-btn" disabled>Send</button>
-            <button id="btn-cancel" class="danger-btn" style="display:none">Cancel</button>
-            <span id="token-count" class="muted"></span>
-          </div>
-        </div>
-        <div class="card playground-output">
-          <h2>Response</h2>
-          <pre id="response-output"></pre>
-          <div id="response-meta" class="muted"></div>
         </div>
       </div>
     </section>

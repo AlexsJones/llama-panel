@@ -197,6 +197,31 @@ button {
   transition: width 0.3s ease;
 }
 .download-banner.success .download-bar { background: var(--green); }
+.download-banner.paused .download-bar { background: var(--yellow); }
+.download-banner.paused .download-banner-dot { background: var(--yellow); animation: none; }
+.download-controls {
+  display: flex;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+.download-controls.hidden { display: none; }
+.dl-ctrl-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  width: 24px;
+  height: 24px;
+  font-size: 0.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+  padding: 0;
+}
+.dl-ctrl-btn:hover { color: var(--text); border-color: var(--text-muted); }
+.dl-ctrl-btn.hidden { display: none; }
 .download-bar-pct {
   position: absolute;
   right: -3rem;
@@ -527,6 +552,16 @@ input[type="checkbox"] {
   display: flex;
   gap: 0.4rem;
   flex-shrink: 0;
+}
+.running-server-card.active-server {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+.active-server-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.05em;
 }
 .running-server-actions button {
   font-size: 0.75rem;
@@ -997,7 +1032,7 @@ input[type="checkbox"] {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1rem;
-  height: calc(100vh - 160px - var(--slot-bar-height));
+  min-height: 300px;
 }
 
 .playground-input, .playground-output {
