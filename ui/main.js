@@ -694,12 +694,11 @@ async function refreshLocalModels() {
 }
 
 async function deleteLocalModel(path, name) {
-  if (!confirm(`Delete ${name}?`)) return;
   try {
     await invoke("delete_local_model", { path });
     refreshLocalModels();
   } catch (e) {
-    alert(`Failed to delete: ${e}`);
+    alert(`Failed to delete ${name}: ${e}`);
   }
 }
 
