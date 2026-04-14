@@ -904,6 +904,11 @@ function renderRunningServers() {
   if (readyCount) parts.push(`${readyCount} running`);
   if (loadingCount) parts.push(`${loadingCount} loading`);
   setStatus(readyCount > 0 ? "connected" : "loading", parts.join(", "));
+
+  // Update integrations tab if it exists
+  if (typeof renderOpencodeRunningServers === "function") {
+    renderOpencodeRunningServers();
+  }
 }
 
 async function stopOneServer(port) {
@@ -1205,6 +1210,173 @@ $("#binary-modal-input").addEventListener("keydown", (e) => {
   if (e.key === "Enter") $("#binary-modal-save").click();
 });
 
+// ── Opencode Integration ──────────────────────────────────────────
+$("#btn-refresh-oc").addEventListener("click", refreshOpencodeModels);
+
+function renderOpencodeRunningServers() {
+  const container = $("#oc-running-servers");
+  const ready = runningServers.filter((s) => s.status === "ready");
+
+  if (ready.length === 0) {
+    container.innerHTML = `<p class="muted">No servers running. Start a model from the Models tab first.</p>`;
+    return;
+  }
+
+  container.innerHTML = ready.map((srv) => {
+    // Extract model filename from path for the model ID
+    const parts = srv.model.split("/");
+    const modelId = parts[parts.length - 1] || srv.name;
+    const displayName = srv.name.replace(/\//g, " ").replace(/\.gguf.*/, "").replace(/-/g, " ");
+    return `<div class="running-server-card">
+      <div class="running-server-info">
+        <span class="status-dot connected"></span>
+        <span class="running-server-model">${escapeHtml(srv.name)}</span>
+        <span class="running-server-port">port ${srv.port}</span>
+      </div>
+      <div class="running-server-actions">
+        <button class="primary-btn oc-add-btn" data-port="${srv.port}" data-model-id="${escapeHtml(modelId)}" data-name="${escapeHtml(displayName)}" style="font-size:0.75rem;padding:0.3rem 0.6rem">Add to opencode</button>
+        <button class="open-btn oc-fav-btn" data-port="${srv.port}" data-model-id="${escapeHtml(modelId)}" data-name="${escapeHtml(displayName)}" style="font-size:0.75rem;padding:0.3rem 0.6rem">Add as favourite</button>
+      </div>
+    </div>`;
+  }).join("");
+
+  container.querySelectorAll(".oc-add-btn").forEach((btn) => {
+    btn.addEventListener("click", () => addToOpencode(btn, false));
+  });
+  container.querySelectorAll(".oc-fav-btn").forEach((btn) => {
+    btn.addEventListener("click", () => addToOpencode(btn, true));
+  });
+}
+
+async function addToOpencode(btn, favourite) {
+  const port = parseInt(btn.dataset.port);
+  const modelId = btn.dataset.modelId;
+  const displayName = btn.dataset.name;
+
+  // Try to get context size from the server
+  let context = 4096;
+  try {
+    const props = await invoke("get_props", { url: `http://localhost:${port}` });
+    const dg = props?.default_generation_settings || {};
+    if (dg.n_ctx) context = dg.n_ctx;
+  } catch { /* use default */ }
+
+  try {
+    await invoke("add_opencode_model", {
+      port,
+      modelId,
+      displayName,
+      context,
+      output: 8192,
+      favourite,
+    });
+    btn.textContent = favourite ? "Favourited!" : "Added!";
+    btn.disabled = true;
+    setTimeout(() => {
+      btn.textContent = favourite ? "Add as favourite" : "Add to opencode";
+      btn.disabled = false;
+    }, 2000);
+    refreshOpencodeModels();
+  } catch (e) {
+    alert(`Failed: ${e}`);
+  }
+}
+
+async function refreshOpencodeModels() {
+  const container = $("#oc-models-list");
+  renderOpencodeRunningServers();
+
+  try {
+    const config = await invoke("read_opencode_config");
+    const models = config?.provider?.["llama.cpp"]?.models || {};
+    const entries = Object.entries(models);
+
+    if (entries.length === 0) {
+      container.innerHTML = `<p class="muted">No models configured in opencode for llama.cpp provider.</p>`;
+      return;
+    }
+
+    const baseUrl = config?.provider?.["llama.cpp"]?.options?.baseURL || "";
+
+    container.innerHTML = `<p class="muted" style="margin-bottom:0.5rem; font-size:0.75rem">Provider: ${escapeHtml(baseUrl)}</p>` +
+      entries.map(([id, m]) => {
+        const isFav = !!m.favourite;
+        const favBtn = `<button class="open-btn oc-toggle-fav" data-id="${escapeHtml(id)}" style="font-size:0.75rem;padding:0.3rem 0.6rem">${isFav ? "★ Unfavourite" : "☆ Favourite"}</button>`;
+        const ctx = m.limit?.context || "?";
+        const out = m.limit?.output || "?";
+        return `<div class="model-card${isFav ? " fav-model" : ""}">
+          <div class="model-card-info">
+            <div class="model-card-name">${escapeHtml(m.name || id)}</div>
+            <div class="model-card-meta">ctx: ${ctx} / out: ${out}</div>
+          </div>
+          ${favBtn}
+          <button class="danger-btn oc-remove-btn" data-id="${escapeHtml(id)}" style="font-size:0.75rem;padding:0.3rem 0.6rem">Remove</button>
+        </div>`;
+      }).join("");
+
+    container.querySelectorAll(".oc-toggle-fav").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await invoke("toggle_opencode_favourite", { modelId: btn.dataset.id });
+          refreshOpencodeModels();
+        } catch (e) {
+          alert(`Failed: ${e}`);
+        }
+      });
+    });
+
+    container.querySelectorAll(".oc-remove-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await invoke("remove_opencode_model", { modelId: btn.dataset.id });
+          refreshOpencodeModels();
+        } catch (e) {
+          alert(`Failed: ${e}`);
+        }
+      });
+    });
+  } catch (e) {
+    container.innerHTML = `<p class="muted">Could not read opencode config: ${e}</p>`;
+  }
+}
+
+// ── Opencode Config Editor Modal ──────────────────────────────────
+$("#btn-edit-oc-config").addEventListener("click", async () => {
+  try {
+    const config = await invoke("read_opencode_config");
+    $("#oc-config-editor").value = JSON.stringify(config, null, 2);
+    $("#oc-config-status").textContent = "";
+    $("#oc-config-modal").style.display = "flex";
+  } catch (e) {
+    alert(`Failed to read config: ${e}`);
+  }
+});
+
+$("#oc-config-modal-close").addEventListener("click", () => {
+  $("#oc-config-modal").style.display = "none";
+});
+$("#oc-config-modal").addEventListener("click", (e) => {
+  if (e.target === e.currentTarget) $("#oc-config-modal").style.display = "none";
+});
+
+$("#oc-config-save").addEventListener("click", async () => {
+  const raw = $("#oc-config-editor").value;
+  try {
+    const parsed = JSON.parse(raw);
+    const formatted = JSON.stringify(parsed, null, 2);
+    // Write via a simple Rust command — reuse the file path
+    const home = await invoke("detect_binary").catch(() => ""); // just to verify invoke works
+    // Write directly by adding the model with the full config
+    // Actually we need a write command. Let me use a workaround: save the full JSON
+    await invoke("save_opencode_config", { config: formatted });
+    $("#oc-config-status").textContent = "Saved!";
+    setTimeout(() => { $("#oc-config-status").textContent = ""; }, 2000);
+    refreshOpencodeModels();
+  } catch (e) {
+    $("#oc-config-status").textContent = `Error: ${e}`;
+  }
+});
+
 // ── Init ──────────────────────────────────────────────────────────
 (async () => {
   try {
@@ -1217,4 +1389,5 @@ $("#binary-modal-input").addEventListener("keydown", (e) => {
   }
 
   refreshLocalModels();
+  refreshOpencodeModels();
 })();

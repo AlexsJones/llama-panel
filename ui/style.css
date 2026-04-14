@@ -1202,7 +1202,12 @@ input[type="checkbox"] {
   height: 32px;
 }
 
-#template-editor {
+.model-card.fav-model {
+  border-color: var(--yellow);
+  background: color-mix(in srgb, var(--yellow) 5%, var(--surface));
+}
+
+#template-editor, #oc-config-editor {
   flex: 1;
   min-height: 300px;
   margin: 1rem 1.25rem;
@@ -1220,7 +1225,7 @@ input[type="checkbox"] {
   tab-size: 2;
 }
 
-#template-editor:focus {
+#template-editor:focus, #oc-config-editor:focus {
   outline: none;
   border-color: var(--accent);
 }

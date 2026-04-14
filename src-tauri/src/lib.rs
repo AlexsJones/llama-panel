@@ -989,6 +989,182 @@ async fn delete_local_model(path: String) -> Result<(), String> {
     Ok(())
 }
 
+// ── Opencode Integration ────────────────────────────────────────────
+
+fn opencode_config_path() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    PathBuf::from(home)
+        .join(".config")
+        .join("opencode")
+        .join("opencode.json")
+}
+
+#[tauri::command]
+async fn read_opencode_config() -> Result<serde_json::Value, String> {
+    let path = opencode_config_path();
+    if !path.exists() {
+        return Ok(serde_json::json!({}));
+    }
+    let content = std::fs::read_to_string(&path).map_err(|e| format!("Failed to read: {e}"))?;
+    serde_json::from_str(&content).map_err(|e| format!("Invalid JSON: {e}"))
+}
+
+#[tauri::command]
+async fn add_opencode_model(
+    port: u16,
+    model_id: String,
+    display_name: String,
+    context: u32,
+    output: u32,
+    favourite: bool,
+) -> Result<String, String> {
+    let path = opencode_config_path();
+
+    // Ensure directory exists
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create config dir: {e}"))?;
+    }
+
+    // Read existing config or create new
+    let mut config: serde_json::Value = if path.exists() {
+        let content = std::fs::read_to_string(&path).map_err(|e| format!("Failed to read: {e}"))?;
+        serde_json::from_str(&content).map_err(|e| format!("Invalid JSON: {e}"))?
+    } else {
+        serde_json::json!({
+            "$schema": "https://opencode.ai/config.json",
+            "provider": {}
+        })
+    };
+
+    // Ensure llama.cpp provider exists with correct port
+    let base_url = format!("http://127.0.0.1:{port}/v1");
+    let provider = config
+        .as_object_mut()
+        .ok_or("Invalid config")?
+        .entry("provider")
+        .or_insert_with(|| serde_json::json!({}));
+
+    let llama_provider = provider
+        .as_object_mut()
+        .ok_or("Invalid provider config")?
+        .entry("llama.cpp")
+        .or_insert_with(|| {
+            serde_json::json!({
+                "npm": "@ai-sdk/openai-compatible",
+                "name": "llama-server (local)",
+                "options": { "baseURL": base_url },
+                "models": {}
+            })
+        });
+
+    // Update baseURL to current port
+    if let Some(opts) = llama_provider.get_mut("options") {
+        opts["baseURL"] = serde_json::json!(base_url);
+    }
+
+    // Add/update the model
+    let models = llama_provider
+        .as_object_mut()
+        .ok_or("Invalid provider")?
+        .entry("models")
+        .or_insert_with(|| serde_json::json!({}));
+
+    let mut model_entry = serde_json::json!({
+        "name": display_name,
+        "limit": {
+            "context": context,
+            "output": output
+        }
+    });
+    if favourite {
+        model_entry["favourite"] = serde_json::json!(true);
+    }
+
+    models
+        .as_object_mut()
+        .ok_or("Invalid models")?
+        .insert(model_id.clone(), model_entry);
+
+    // Write back
+    let formatted =
+        serde_json::to_string_pretty(&config).map_err(|e| format!("Serialize error: {e}"))?;
+    std::fs::write(&path, formatted).map_err(|e| format!("Failed to write: {e}"))?;
+
+    Ok(format!("Added {model_id} to opencode config"))
+}
+
+#[tauri::command]
+async fn remove_opencode_model(model_id: String) -> Result<String, String> {
+    let path = opencode_config_path();
+    if !path.exists() {
+        return Err("No opencode config found".to_string());
+    }
+
+    let content = std::fs::read_to_string(&path).map_err(|e| format!("Failed to read: {e}"))?;
+    let mut config: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| format!("Invalid JSON: {e}"))?;
+
+    if let Some(models) = config
+        .pointer_mut("/provider/llama.cpp/models")
+        .and_then(|m| m.as_object_mut())
+    {
+        models.remove(&model_id);
+    }
+
+    let formatted =
+        serde_json::to_string_pretty(&config).map_err(|e| format!("Serialize error: {e}"))?;
+    std::fs::write(&path, formatted).map_err(|e| format!("Failed to write: {e}"))?;
+
+    Ok(format!("Removed {model_id} from opencode config"))
+}
+
+#[tauri::command]
+async fn toggle_opencode_favourite(model_id: String) -> Result<bool, String> {
+    let path = opencode_config_path();
+    if !path.exists() {
+        return Err("No opencode config found".to_string());
+    }
+
+    let content = std::fs::read_to_string(&path).map_err(|e| format!("Failed to read: {e}"))?;
+    let mut config: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| format!("Invalid JSON: {e}"))?;
+
+    let new_fav = if let Some(model) = config
+        .pointer_mut("/provider/llama.cpp/models")
+        .and_then(|m| m.get_mut(&model_id))
+    {
+        let is_fav = model
+            .get("favourite")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if is_fav {
+            model.as_object_mut().unwrap().remove("favourite");
+            false
+        } else {
+            model["favourite"] = serde_json::json!(true);
+            true
+        }
+    } else {
+        return Err(format!("Model {model_id} not found"));
+    };
+
+    let formatted =
+        serde_json::to_string_pretty(&config).map_err(|e| format!("Serialize error: {e}"))?;
+    std::fs::write(&path, formatted).map_err(|e| format!("Failed to write: {e}"))?;
+
+    Ok(new_fav)
+}
+
+#[tauri::command]
+async fn save_opencode_config(config: String) -> Result<(), String> {
+    let path = opencode_config_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create config dir: {e}"))?;
+    }
+    std::fs::write(&path, config).map_err(|e| format!("Failed to write: {e}"))?;
+    Ok(())
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────
 
 fn urlencoded(s: &str) -> String {
@@ -1034,6 +1210,11 @@ pub fn run() {
             download_hf_model,
             list_local_models,
             delete_local_model,
+            read_opencode_config,
+            add_opencode_model,
+            remove_opencode_model,
+            toggle_opencode_favourite,
+            save_opencode_config,
             send_completion,
             send_chat_completion,
             tokenize,
