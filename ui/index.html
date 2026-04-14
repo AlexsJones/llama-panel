@@ -144,160 +144,77 @@
               <div id="response-meta" class="muted"></div>
             </div>
           </div>
-        </div>
 
-        <!-- Parameters -->
-        <div class="card">
-          <h2>Sampling</h2>
-          <div class="param-group">
-            <div class="param-row">
-              <label for="p-temperature">Temperature</label>
-              <input type="range" id="p-temperature" min="0" max="2" step="0.05" value="0.8" />
-              <input type="number" class="param-val" id="p-temperature-val" min="0" max="2" step="0.05" value="0.8" />
-            </div>
-            <div class="param-row">
-              <label for="p-top-k">Top-K</label>
-              <input type="range" id="p-top-k" min="0" max="200" step="1" value="40" />
-              <input type="number" class="param-val" id="p-top-k-val" min="0" max="200" step="1" value="40" />
-            </div>
-            <div class="param-row">
-              <label for="p-top-p">Top-P</label>
-              <input type="range" id="p-top-p" min="0" max="1" step="0.01" value="0.95" />
-              <input type="number" class="param-val" id="p-top-p-val" min="0" max="1" step="0.01" value="0.95" />
-            </div>
-            <div class="param-row">
-              <label for="p-min-p">Min-P</label>
-              <input type="range" id="p-min-p" min="0" max="1" step="0.01" value="0.05" />
-              <input type="number" class="param-val" id="p-min-p-val" min="0" max="1" step="0.01" value="0.05" />
-            </div>
-          </div>
-        </div>
-        <div class="card">
-          <h2>Penalties &amp; Generation</h2>
-          <div class="param-group">
-            <div class="param-row">
-              <label for="p-repeat-penalty">Repeat Penalty</label>
-              <input type="range" id="p-repeat-penalty" min="0" max="2" step="0.05" value="1.1" />
-              <input type="number" class="param-val" id="p-repeat-penalty-val" min="0" max="2" step="0.05" value="1.1" />
-            </div>
-            <div class="param-row">
-              <label for="p-presence-penalty">Presence Penalty</label>
-              <input type="range" id="p-presence-penalty" min="-2" max="2" step="0.05" value="0" />
-              <input type="number" class="param-val" id="p-presence-penalty-val" min="-2" max="2" step="0.05" value="0" />
-            </div>
-            <div class="param-row">
-              <label for="p-frequency-penalty">Frequency Penalty</label>
-              <input type="range" id="p-frequency-penalty" min="-2" max="2" step="0.05" value="0" />
-              <input type="number" class="param-val" id="p-frequency-penalty-val" min="-2" max="2" step="0.05" value="0" />
-            </div>
-            <div class="param-row">
-              <label for="p-n-predict">Max Tokens</label>
-              <input type="range" id="p-n-predict" min="-1" max="4096" step="1" value="256" />
-              <input type="number" class="param-val" id="p-n-predict-val" min="-1" max="32768" step="1" value="256" />
-            </div>
-            <div class="param-row">
-              <label for="p-seed">Seed (-1 = random)</label>
-              <input type="number" class="param-val wide-input" id="p-seed" value="-1" />
-            </div>
-            <div class="param-row">
-              <label for="p-stop">Stop sequences</label>
-              <input type="text" class="param-val wide-input" id="p-stop" placeholder='e.g. ["\n", "User:"]' />
-            </div>
-            <div class="param-row">
-              <label for="p-cache-prompt">Cache prompt</label>
-              <input type="checkbox" id="p-cache-prompt" checked />
-            </div>
-          </div>
-          <div class="preset-buttons" style="margin-top: 0.75rem">
-            <button class="preset-btn" data-preset="creative">Creative</button>
-            <button class="preset-btn" data-preset="balanced">Balanced</button>
-            <button class="preset-btn" data-preset="precise">Precise</button>
-            <button class="preset-btn" data-preset="deterministic">Deterministic</button>
-          </div>
-          <div class="param-group" style="margin-top: 0.75rem">
-            <button id="btn-load-defaults" class="secondary-btn">Load Server Defaults</button>
-            <button id="btn-reset-params" class="secondary-btn">Reset to Defaults</button>
-          </div>
-        </div>
-
-        <!-- Server Settings (for launching new servers) -->
-        <div class="card wide">
-          <h2>Launch Settings</h2>
-          <p class="muted" style="margin-bottom: 0.75rem">
-            These settings apply when starting a model from the Models tab.
-          </p>
-          <div class="param-group">
-            <div class="param-row">
-              <label for="server-bin-path">Binary path</label>
-              <input type="text" class="param-val wide-input" id="server-bin-path" placeholder="auto-detected" />
-            </div>
-          </div>
-
-          <div class="server-opts-grid">
-            <div class="server-opt-section">
-              <div class="server-opt-title">Context &amp; Memory</div>
-              <div class="param-row">
-                <label for="opt-ctx-size">Context size</label>
-                <input type="number" class="param-val" id="opt-ctx-size" value="4096" style="width:90px" />
+          <!-- Collapsible Settings -->
+          <details class="playground-settings">
+            <summary>Settings</summary>
+            <div class="playground-settings-grid">
+              <div class="param-group">
+                <div class="param-row">
+                  <label for="p-temperature">Temperature</label>
+                  <input type="range" id="p-temperature" min="0" max="2" step="0.05" value="0.8" />
+                  <input type="number" class="param-val" id="p-temperature-val" min="0" max="2" step="0.05" value="0.8" />
+                </div>
+                <div class="param-row">
+                  <label for="p-top-k">Top-K</label>
+                  <input type="range" id="p-top-k" min="0" max="200" step="1" value="40" />
+                  <input type="number" class="param-val" id="p-top-k-val" min="0" max="200" step="1" value="40" />
+                </div>
+                <div class="param-row">
+                  <label for="p-top-p">Top-P</label>
+                  <input type="range" id="p-top-p" min="0" max="1" step="0.01" value="0.95" />
+                  <input type="number" class="param-val" id="p-top-p-val" min="0" max="1" step="0.01" value="0.95" />
+                </div>
+                <div class="param-row">
+                  <label for="p-min-p">Min-P</label>
+                  <input type="range" id="p-min-p" min="0" max="1" step="0.01" value="0.05" />
+                  <input type="number" class="param-val" id="p-min-p-val" min="0" max="1" step="0.01" value="0.05" />
+                </div>
+                <div class="param-row">
+                  <label for="p-repeat-penalty">Repeat Penalty</label>
+                  <input type="range" id="p-repeat-penalty" min="0" max="2" step="0.05" value="1.1" />
+                  <input type="number" class="param-val" id="p-repeat-penalty-val" min="0" max="2" step="0.05" value="1.1" />
+                </div>
+                <div class="param-row">
+                  <label for="p-presence-penalty">Presence</label>
+                  <input type="range" id="p-presence-penalty" min="-2" max="2" step="0.05" value="0" />
+                  <input type="number" class="param-val" id="p-presence-penalty-val" min="-2" max="2" step="0.05" value="0" />
+                </div>
+                <div class="param-row">
+                  <label for="p-frequency-penalty">Frequency</label>
+                  <input type="range" id="p-frequency-penalty" min="-2" max="2" step="0.05" value="0" />
+                  <input type="number" class="param-val" id="p-frequency-penalty-val" min="-2" max="2" step="0.05" value="0" />
+                </div>
+                <div class="param-row">
+                  <label for="p-n-predict">Max Tokens</label>
+                  <input type="range" id="p-n-predict" min="-1" max="4096" step="1" value="256" />
+                  <input type="number" class="param-val" id="p-n-predict-val" min="-1" max="32768" step="1" value="256" />
+                </div>
+                <div class="param-row">
+                  <label for="p-seed">Seed</label>
+                  <input type="number" class="param-val" id="p-seed" value="-1" style="width:90px" />
+                </div>
+                <div class="param-row">
+                  <label for="p-stop">Stop seqs</label>
+                  <input type="text" class="param-val wide-input" id="p-stop" placeholder='["\n", "User:"]' />
+                </div>
+                <div class="param-row">
+                  <label for="p-cache-prompt">Cache prompt</label>
+                  <input type="checkbox" id="p-cache-prompt" checked />
+                </div>
               </div>
-              <div class="param-row">
-                <label for="opt-ngl">GPU layers</label>
-                <input type="number" class="param-val" id="opt-ngl" value="999" style="width:90px" />
+              <div class="preset-buttons">
+                <button class="preset-btn" data-preset="creative">Creative</button>
+                <button class="preset-btn" data-preset="balanced">Balanced</button>
+                <button class="preset-btn" data-preset="precise">Precise</button>
+                <button class="preset-btn" data-preset="deterministic">Deterministic</button>
               </div>
-              <div class="param-row">
-                <label for="opt-batch-size">Batch size</label>
-                <input type="number" class="param-val" id="opt-batch-size" value="2048" style="width:90px" />
-              </div>
-              <div class="param-row">
-                <label for="opt-ubatch-size">Micro-batch size</label>
-                <input type="number" class="param-val" id="opt-ubatch-size" value="512" style="width:90px" />
-              </div>
-              <div class="param-row">
-                <label for="opt-flash-attn">Flash attention</label>
-                <input type="checkbox" id="opt-flash-attn" checked />
+              <div class="param-group" style="margin-top: 0.5rem">
+                <button id="btn-load-defaults" class="secondary-btn">Load Server Defaults</button>
+                <button id="btn-reset-params" class="secondary-btn">Reset to Defaults</button>
               </div>
             </div>
-
-            <div class="server-opt-section">
-              <div class="server-opt-title">Slots &amp; Parallelism</div>
-              <div class="param-row">
-                <label for="opt-parallel">Parallel slots</label>
-                <input type="number" class="param-val" id="opt-parallel" value="1" min="1" style="width:90px" />
-              </div>
-              <div class="param-row">
-                <label for="opt-slots">Enable slot monitoring</label>
-                <input type="checkbox" id="opt-slots" checked />
-              </div>
-              <div class="param-row">
-                <label for="opt-cont-batch">Continuous batching</label>
-                <input type="checkbox" id="opt-cont-batch" checked />
-              </div>
-            </div>
-
-            <div class="server-opt-section">
-              <div class="server-opt-title">Endpoints &amp; API</div>
-              <div class="param-row">
-                <label for="opt-props">Expose properties</label>
-                <input type="checkbox" id="opt-props" checked />
-              </div>
-              <div class="param-row">
-                <label for="opt-metrics">Enable metrics</label>
-                <input type="checkbox" id="opt-metrics" />
-              </div>
-              <div class="param-row">
-                <label for="opt-host">Listen host</label>
-                <input type="text" class="param-val" id="opt-host" value="127.0.0.1" style="width:120px" />
-              </div>
-            </div>
-          </div>
-
-          <div class="param-group" style="margin-top: 0.75rem">
-            <div class="param-row">
-              <label for="server-extra-args">Extra args</label>
-              <input type="text" class="param-val wide-input" id="server-extra-args"
-                     placeholder="Any additional flags..." />
-            </div>
-          </div>
+          </details>
         </div>
 
         <!-- Server Properties & Log -->
@@ -328,6 +245,90 @@
       <span class="muted">Not connected</span>
     </div>
   </footer>
+
+  <!-- Launch Settings Modal -->
+  <div id="launch-modal" class="modal-overlay" style="display:none">
+    <div class="modal" style="max-width:620px">
+      <div class="modal-header">
+        <h2>Launch Server</h2>
+        <button id="launch-modal-close" class="icon-btn" title="Close">&times;</button>
+      </div>
+      <div style="padding: 1.25rem">
+        <div id="launch-modal-model" style="font-weight:600; margin-bottom:1rem; font-size:0.85rem; word-break:break-all"></div>
+        <div class="param-group">
+          <div class="param-row">
+            <label for="server-bin-path">Binary path</label>
+            <input type="text" class="param-val wide-input" id="server-bin-path" placeholder="auto-detected" />
+          </div>
+        </div>
+        <div class="server-opts-grid" style="margin-top:0.75rem">
+          <div class="server-opt-section">
+            <div class="server-opt-title">Context &amp; Memory</div>
+            <div class="param-row">
+              <label for="opt-ctx-size">Context size</label>
+              <input type="number" class="param-val" id="opt-ctx-size" value="4096" style="width:90px" />
+            </div>
+            <div class="param-row">
+              <label for="opt-ngl">GPU layers</label>
+              <input type="number" class="param-val" id="opt-ngl" value="999" style="width:90px" />
+            </div>
+            <div class="param-row">
+              <label for="opt-batch-size">Batch size</label>
+              <input type="number" class="param-val" id="opt-batch-size" value="2048" style="width:90px" />
+            </div>
+            <div class="param-row">
+              <label for="opt-ubatch-size">Micro-batch size</label>
+              <input type="number" class="param-val" id="opt-ubatch-size" value="512" style="width:90px" />
+            </div>
+            <div class="param-row">
+              <label for="opt-flash-attn">Flash attention</label>
+              <input type="checkbox" id="opt-flash-attn" checked />
+            </div>
+          </div>
+          <div class="server-opt-section">
+            <div class="server-opt-title">Slots &amp; Parallelism</div>
+            <div class="param-row">
+              <label for="opt-parallel">Parallel slots</label>
+              <input type="number" class="param-val" id="opt-parallel" value="1" min="1" style="width:90px" />
+            </div>
+            <div class="param-row">
+              <label for="opt-slots">Enable slot monitoring</label>
+              <input type="checkbox" id="opt-slots" checked />
+            </div>
+            <div class="param-row">
+              <label for="opt-cont-batch">Continuous batching</label>
+              <input type="checkbox" id="opt-cont-batch" checked />
+            </div>
+          </div>
+          <div class="server-opt-section">
+            <div class="server-opt-title">Endpoints &amp; API</div>
+            <div class="param-row">
+              <label for="opt-props">Expose properties</label>
+              <input type="checkbox" id="opt-props" checked />
+            </div>
+            <div class="param-row">
+              <label for="opt-metrics">Enable metrics</label>
+              <input type="checkbox" id="opt-metrics" />
+            </div>
+            <div class="param-row">
+              <label for="opt-host">Listen host</label>
+              <input type="text" class="param-val" id="opt-host" value="127.0.0.1" style="width:120px" />
+            </div>
+          </div>
+        </div>
+        <div class="param-group" style="margin-top: 0.75rem">
+          <div class="param-row">
+            <label for="server-extra-args">Extra args</label>
+            <input type="text" class="param-val wide-input" id="server-extra-args"
+                   placeholder="Any additional flags..." />
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="launch-modal-start" class="primary-btn">Launch</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Binary Path Modal -->
   <div id="binary-modal" class="modal-overlay" style="display:none">

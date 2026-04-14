@@ -754,8 +754,41 @@ function stopServerLogListener() {
   }
 }
 
+// ── Launch Modal ──────────────────────────────────────────────────
+let pendingLaunch = null;
+
+function showLaunchModal(modelPath, modelName) {
+  pendingLaunch = { modelPath, modelName };
+  $("#launch-modal-model").textContent = modelName;
+  $("#launch-modal").style.display = "flex";
+}
+
+function closeLaunchModal() {
+  $("#launch-modal").style.display = "none";
+  pendingLaunch = null;
+}
+
+$("#launch-modal-close").addEventListener("click", closeLaunchModal);
+$("#launch-modal").addEventListener("click", (e) => {
+  if (e.target === e.currentTarget) closeLaunchModal();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && $("#launch-modal").style.display === "flex") closeLaunchModal();
+});
+
+$("#launch-modal-start").addEventListener("click", () => {
+  if (!pendingLaunch) return;
+  const { modelPath, modelName } = pendingLaunch;
+  closeLaunchModal();
+  doStartServer(modelPath, modelName);
+});
+
 // ── Start Local Model ─────────────────────────────────────────────
-async function startLocalModel(modelPath, modelName) {
+function startLocalModel(modelPath, modelName) {
+  showLaunchModal(modelPath, modelName);
+}
+
+async function doStartServer(modelPath, modelName) {
   const binary = getResolvedBinary();
   if (!binary) { showBinaryModal(); return; }
 
@@ -776,7 +809,6 @@ async function startLocalModel(modelPath, modelName) {
 
     const srvUrl = `http://localhost:${port}`;
 
-    // Poll for health === "ok"
     let attempts = 0;
     const tryConnect = setInterval(async () => {
       attempts++;
@@ -786,11 +818,9 @@ async function startLocalModel(modelPath, modelName) {
         if (st === "ok" || st === "no slot available") {
           clearInterval(tryConnect);
           stopServerLogListener();
-          // Mark as ready
           const srv = runningServers.find((s) => s.port === port);
           if (srv) srv.status = "ready";
           renderRunningServers();
-          // Auto-connect to this server for playground
           await connectToServer(srvUrl);
           const msg = `${modelName} running on port ${port}`;
           setDownloadBanner(msg, "success");
@@ -800,7 +830,7 @@ async function startLocalModel(modelPath, modelName) {
       } catch {
         // server not up yet
       }
-      if (attempts > 300) { // 10 minutes
+      if (attempts > 300) {
         clearInterval(tryConnect);
         stopServerLogListener();
         setDownloadBanner("Server start timed out", "error");
@@ -1063,6 +1093,7 @@ async function sendPrompt() {
   abortGeneration = false;
   output.textContent = "";
   meta.textContent = "Waiting for server...";
+  $(".playground-layout").classList.add("has-response");
 
   const params = getParams();
   const startTime = performance.now();

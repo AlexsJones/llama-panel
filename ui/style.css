@@ -1029,10 +1029,38 @@ input[type="checkbox"] {
 
 /* Playground */
 .playground-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.playground-layout.has-response {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-  min-height: 300px;
+}
+.playground-output {
+  display: none;
+}
+.playground-layout.has-response .playground-output {
+  display: flex;
+}
+
+.playground-settings {
+  margin-top: 1rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+}
+.playground-settings summary {
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  user-select: none;
+}
+.playground-settings summary:hover { color: var(--text); }
+.playground-settings-grid {
+  margin-top: 0.75rem;
 }
 
 .playground-input, .playground-output {
