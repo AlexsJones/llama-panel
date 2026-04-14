@@ -1253,12 +1253,12 @@ async function addToOpencode(btn, favourite) {
   const modelId = btn.dataset.modelId;
   const displayName = btn.dataset.name;
 
-  // Try to get context size from the server
-  let context = 4096;
+  // Try to get context size from the server, default to 32768
+  let context = 32768;
   try {
     const props = await invoke("get_props", { url: `http://localhost:${port}` });
     const dg = props?.default_generation_settings || {};
-    if (dg.n_ctx) context = dg.n_ctx;
+    if (dg.n_ctx && dg.n_ctx > 0) context = dg.n_ctx;
   } catch { /* use default */ }
 
   try {
