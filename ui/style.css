@@ -23,8 +23,10 @@ body {
   font-family: var(--font);
   background: var(--bg);
   color: var(--text);
-  min-height: 100vh;
-  overflow-x: hidden;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Connection Bar */
@@ -235,7 +237,9 @@ button {
 #content {
   padding: 1.25rem;
   overflow-y: auto;
-  height: calc(100vh - 108px - var(--slot-bar-height));
+  flex: 1;
+  min-height: 0;
+  margin-bottom: var(--slot-bar-height);
 }
 
 .tab-panel { display: none; }
