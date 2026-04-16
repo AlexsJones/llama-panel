@@ -282,6 +282,7 @@ async fn detect_binary() -> Result<String, String> {
 
     let candidates = [
         "/usr/local/bin/llama-server",
+        #[cfg(target_os = "macos")]
         "/opt/homebrew/bin/llama-server",
         "/usr/bin/llama-server",
     ];
@@ -351,7 +352,12 @@ async fn pick_random_port() -> Result<u16, String> {
 
 #[tauri::command]
 async fn open_in_browser(url: String) -> Result<(), String> {
-    Command::new("open")
+    #[cfg(target_os = "macos")]
+    let cmd = "open";
+    #[cfg(target_os = "linux")]
+    let cmd = "xdg-open";
+
+    Command::new(cmd)
         .arg(&url)
         .spawn()
         .map_err(|e| format!("Failed to open browser: {e}"))?;

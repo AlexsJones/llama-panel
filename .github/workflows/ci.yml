@@ -11,7 +11,14 @@ env:
 
 jobs:
   test:
-    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            deps: ""
+          - os: ubuntu-latest
+            deps: "sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf"
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -26,6 +33,10 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
+      - name: Install system dependencies
+        if: matrix.deps != ''
+        run: ${{ matrix.deps }}
+
       - name: Run tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
@@ -39,7 +50,14 @@ jobs:
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
   clippy:
-    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            deps: ""
+          - os: ubuntu-latest
+            deps: "sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf"
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -55,6 +73,10 @@ jobs:
             src-tauri/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Install system dependencies
+        if: matrix.deps != ''
+        run: ${{ matrix.deps }}
 
       - name: Clippy
         run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings

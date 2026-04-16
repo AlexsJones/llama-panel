@@ -12,7 +12,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  build-macos:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -58,8 +58,63 @@ jobs:
             llama-panel-*.tar.gz
             llama-panel-*.tar.gz.sha256
 
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-linux-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-linux-cargo-
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli
+
+      - name: Build Linux app
+        run: cargo tauri build --target x86_64-unknown-linux-gnu --bundles deb appimage
+
+      - name: Package
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          # Collect .deb
+          DEB=$(find target -name "*.deb" -type f | head -1)
+          if [ -n "$DEB" ]; then
+            cp "$DEB" "llama-panel-${{ github.ref_name }}-linux-amd64.deb"
+            sha256sum "llama-panel-${{ github.ref_name }}-linux-amd64.deb" > "llama-panel-${{ github.ref_name }}-linux-amd64.deb.sha256"
+          fi
+          # Collect .AppImage
+          APPIMAGE=$(find target -name "*.AppImage" -type f | head -1)
+          if [ -n "$APPIMAGE" ]; then
+            cp "$APPIMAGE" "llama-panel-${{ github.ref_name }}-linux-amd64.AppImage"
+            sha256sum "llama-panel-${{ github.ref_name }}-linux-amd64.AppImage" > "llama-panel-${{ github.ref_name }}-linux-amd64.AppImage.sha256"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-amd64
+          path: |
+            llama-panel-*.deb
+            llama-panel-*.deb.sha256
+            llama-panel-*.AppImage
+            llama-panel-*.AppImage.sha256
+
   release:
-    needs: build
+    needs: [build-macos, build-linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -73,6 +128,10 @@ jobs:
           files: |
             llama-panel-*.tar.gz
             llama-panel-*.tar.gz.sha256
+            llama-panel-*.deb
+            llama-panel-*.deb.sha256
+            llama-panel-*.AppImage
+            llama-panel-*.AppImage.sha256
 
   update-homebrew:
     needs: release
@@ -80,7 +139,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          merge-multiple: true
+          name: macos-universal
 
       - name: Compute checksums
         id: checksums
