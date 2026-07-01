@@ -21,6 +21,9 @@ struct LocalModel {
     filename: String,
     path: String,
     size: u64,
+    /// Path to a multimodal projector (mmproj) file in the same snapshot, if
+    /// any. Passed to llama-server via `--mmproj` when the model is started.
+    mmproj: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -56,6 +59,31 @@ fn hf_hub_dir() -> PathBuf {
 
 fn repo_dir(repo: &str) -> PathBuf {
     hf_hub_dir().join(format!("models--{}", repo.replace('/', "--")))
+}
+
+/// Whether a GGUF filename is a multimodal projector ("mmproj-*.gguf").
+/// These are companions to a model, not standalone models (issue #2).
+fn is_mmproj_name(name: &str) -> bool {
+    name.rsplit('/')
+        .next()
+        .unwrap_or(name)
+        .to_lowercase()
+        .contains("mmproj")
+}
+
+/// Turn a HuggingFace tree entry into a `{path, size, hash}` download descriptor.
+fn tree_file_entry(f: &serde_json::Value) -> serde_json::Value {
+    // LFS files carry the SHA256 in lfs.oid; non-LFS files use oid directly.
+    let blob_hash = f["lfs"]["oid"]
+        .as_str()
+        .or_else(|| f["oid"].as_str())
+        .unwrap_or("")
+        .to_string();
+    serde_json::json!({
+        "path": f["path"].as_str().unwrap_or(""),
+        "size": f["size"].as_u64().unwrap_or(0),
+        "hash": blob_hash,
+    })
 }
 
 // ── Connection & Server Info ─────────────────────────────────────────
@@ -373,6 +401,7 @@ async fn start_server(
     port: String,
     extra_args: String,
     model_path: Option<String>,
+    mmproj_path: Option<String>,
 ) -> Result<String, String> {
     use tauri::Emitter;
 
@@ -383,6 +412,13 @@ async fn start_server(
 
     if let Some(ref mp) = model_path {
         cmd.arg("-m").arg(mp);
+    }
+
+    // Multimodal projector for vision models (issue #2).
+    if let Some(ref mm) = mmproj_path {
+        if !mm.is_empty() {
+            cmd.arg("--mmproj").arg(mm);
+        }
     }
 
     if !extra_args.is_empty() {
@@ -517,6 +553,29 @@ async fn list_hf_files(repo: String) -> Result<serde_json::Value, String> {
         return Err("No GGUF files found in this repo".to_string());
     }
 
+    // Multimodal projector files (mmproj-*.gguf) are companions, not standalone
+    // models (issue #2). Pull them out and attach them to every model bundle so
+    // a downloaded vision model is complete. If the repo is *only* projectors,
+    // fall back to listing them so the user isn't left with nothing.
+    let is_proj = |f: &&serde_json::Value| is_mmproj_name(f["path"].as_str().unwrap_or(""));
+    let model_files: Vec<&serde_json::Value> =
+        gguf_files.iter().copied().filter(|f| !is_proj(f)).collect();
+    let mmproj_entries: Vec<serde_json::Value> = if model_files.is_empty() {
+        Vec::new()
+    } else {
+        gguf_files
+            .iter()
+            .copied()
+            .filter(is_proj)
+            .map(tree_file_entry)
+            .collect()
+    };
+    let model_files = if model_files.is_empty() {
+        gguf_files.clone()
+    } else {
+        model_files
+    };
+
     // Group split models: "foo-00001-of-00003.gguf" → base "foo"
     // Single files stay as-is
     use std::collections::BTreeMap;
@@ -525,7 +584,7 @@ async fn list_hf_files(repo: String) -> Result<serde_json::Value, String> {
 
     let mut bundles: BTreeMap<String, Vec<serde_json::Value>> = BTreeMap::new();
 
-    for f in &gguf_files {
+    for f in &model_files {
         let path = f["path"].as_str().unwrap_or("");
         let key = if let Some(caps) = split_re.captures(path) {
             // Group key is everything before the split suffix
@@ -535,18 +594,8 @@ async fn list_hf_files(repo: String) -> Result<serde_json::Value, String> {
             path.to_string()
         };
 
-        // LFS files have an lfs.oid (SHA256), non-LFS use oid directly
-        let blob_hash = f["lfs"]["oid"]
-            .as_str()
-            .or_else(|| f["oid"].as_str())
-            .unwrap_or("")
-            .to_string();
-
-        bundles.entry(key).or_default().push(serde_json::json!({
-            "path": path,
-            "size": f["size"].as_u64().unwrap_or(0),
-            "hash": blob_hash,
-        }));
+        // `f` is `&&Value` (iterating a `Vec<&Value>`); deref once for the helper.
+        bundles.entry(key).or_default().push(tree_file_entry(f));
     }
 
     // Sort files within each bundle by name
@@ -561,14 +610,19 @@ async fn list_hf_files(repo: String) -> Result<serde_json::Value, String> {
 
     let result: Vec<serde_json::Value> = bundles
         .into_iter()
-        .map(|(name, files)| {
+        .map(|(name, model_files)| {
+            // "file_count" reflects the model's own parts (for the "N parts"
+            // label); the projector files are added on top for download.
+            let file_count = model_files.len();
+            let mut files = model_files;
+            files.extend(mmproj_entries.iter().cloned());
             let total_size: u64 = files.iter().map(|f| f["size"].as_u64().unwrap_or(0)).sum();
-            let file_count = files.len();
             serde_json::json!({
                 "name": name,
                 "files": files,
                 "total_size": total_size,
                 "file_count": file_count,
+                "has_mmproj": !mmproj_entries.is_empty(),
             })
         })
         .collect();
@@ -877,10 +931,18 @@ async fn list_local_models() -> Result<Vec<LocalModel>, String> {
 
         use std::collections::BTreeMap;
         let mut bundles: BTreeMap<String, (Vec<String>, u64)> = BTreeMap::new();
+        // Multimodal projector files (mmproj-*.gguf) are companions to a model,
+        // not standalone models (issue #2). Collect them separately and attach
+        // to the models in this snapshot.
+        let mut mmproj_paths: Vec<PathBuf> = Vec::new();
 
         for file in snap_files.flatten() {
             let fname = file.file_name().to_string_lossy().to_string();
             if !fname.ends_with(".gguf") {
+                continue;
+            }
+            if is_mmproj_name(&fname) {
+                mmproj_paths.push(file.path());
                 continue;
             }
             // Follow symlink to get real file size
@@ -896,6 +958,13 @@ async fn list_local_models() -> Result<Vec<LocalModel>, String> {
             bentry.0.push(fname);
             bentry.1 += size;
         }
+
+        // Deterministically pick a projector if the snapshot has several
+        // (e.g. F16 and BF16 variants).
+        mmproj_paths.sort();
+        let mmproj = mmproj_paths
+            .first()
+            .map(|p| p.to_string_lossy().to_string());
 
         for (base_name, (mut file_list, total_size)) in bundles {
             file_list.sort();
@@ -921,6 +990,7 @@ async fn list_local_models() -> Result<Vec<LocalModel>, String> {
                 filename: file_list[0].clone(),
                 path: first_path.to_string_lossy().to_string(),
                 size: total_size,
+                mmproj: mmproj.clone(),
             });
         }
     }

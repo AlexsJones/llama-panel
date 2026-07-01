@@ -481,8 +481,9 @@ async function loadHfFiles(repo, quantFilter) {
     container.innerHTML = `<div class="hf-files-header muted">Select a model to download:</div>` +
       bundles.map((b, idx) => {
         const parts = b.file_count > 1 ? ` (${b.file_count} parts)` : "";
+        const vision = b.has_mmproj ? ` <span class="hf-vision-tag">+ vision projector</span>` : "";
         return `<div class="hf-file-row">
-          <span class="hf-file-name">${escapeHtml(b.name)}${parts}</span>
+          <span class="hf-file-name">${escapeHtml(b.name)}${parts}${vision}</span>
           <span class="hf-file-size muted">${formatSize(b.total_size)}</span>
           <button class="secondary-btn hf-file-dl-btn" data-idx="${idx}">Download</button>
         </div>`;
@@ -670,19 +671,23 @@ async function refreshLocalModels() {
       const runBadge = isRunning
         ? `<span class="model-status-badge loaded">PORT ${runningSrv.port}</span>`
         : "";
+      const visionBadge = m.mmproj
+        ? `<span class="model-status-badge vision" title="Multimodal — starts with --mmproj">VISION</span>`
+        : "";
       return `<div class="model-card">
         <div class="model-card-info">
           <div class="model-card-name" title="${escapeHtml(m.path)}">${escapeHtml(m.name)}</div>
           <div class="model-card-meta">${formatSize(m.size)}</div>
         </div>
+        ${visionBadge}
         ${runBadge}
-        <button class="primary-btn model-start-btn" data-path="${escapeHtml(m.path)}" data-name="${escapeHtml(m.name)}">${isRunning ? "Start Another" : "Start"}</button>
+        <button class="primary-btn model-start-btn" data-path="${escapeHtml(m.path)}" data-name="${escapeHtml(m.name)}" data-mmproj="${escapeHtml(m.mmproj || "")}">${isRunning ? "Start Another" : "Start"}</button>
         <button class="danger-btn model-delete-btn" data-path="${escapeHtml(m.path)}" data-name="${escapeHtml(m.name)}" ${isRunning ? "disabled" : ""}>Delete</button>
       </div>`;
     }).join("");
 
     container.querySelectorAll(".model-start-btn").forEach((btn) => {
-      btn.addEventListener("click", () => startLocalModel(btn.dataset.path, btn.dataset.name));
+      btn.addEventListener("click", () => startLocalModel(btn.dataset.path, btn.dataset.name, btn.dataset.mmproj));
     });
 
     container.querySelectorAll(".model-delete-btn").forEach((btn) => {
@@ -757,8 +762,8 @@ function stopServerLogListener() {
 // ── Launch Modal ──────────────────────────────────────────────────
 let pendingLaunch = null;
 
-function showLaunchModal(modelPath, modelName) {
-  pendingLaunch = { modelPath, modelName };
+function showLaunchModal(modelPath, modelName, mmproj) {
+  pendingLaunch = { modelPath, modelName, mmproj: mmproj || null };
   $("#launch-modal-model").textContent = modelName;
   $("#launch-modal").style.display = "flex";
 }
@@ -778,17 +783,17 @@ document.addEventListener("keydown", (e) => {
 
 $("#launch-modal-start").addEventListener("click", () => {
   if (!pendingLaunch) return;
-  const { modelPath, modelName } = pendingLaunch;
+  const { modelPath, modelName, mmproj } = pendingLaunch;
   closeLaunchModal();
-  doStartServer(modelPath, modelName);
+  doStartServer(modelPath, modelName, mmproj);
 });
 
 // ── Start Local Model ─────────────────────────────────────────────
-function startLocalModel(modelPath, modelName) {
-  showLaunchModal(modelPath, modelName);
+function startLocalModel(modelPath, modelName, mmproj) {
+  showLaunchModal(modelPath, modelName, mmproj);
 }
 
-async function doStartServer(modelPath, modelName) {
+async function doStartServer(modelPath, modelName, mmproj) {
   const binary = getResolvedBinary();
   if (!binary) { showBinaryModal(); return; }
 
@@ -812,7 +817,7 @@ async function doStartServer(modelPath, modelName) {
     await startServerLogListener(port);
     const extraArgs = buildServerArgs();
 
-    await invoke("start_server", { binary, port: String(port), extraArgs, modelPath });
+    await invoke("start_server", { binary, port: String(port), extraArgs, modelPath, mmprojPath: mmproj || null });
 
     runningServers.push({ port, model: modelPath, name: modelName, status: "loading" });
     renderRunningServers();
