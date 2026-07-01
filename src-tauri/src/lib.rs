@@ -30,8 +30,49 @@ struct ServerInstance {
     model: String,
 }
 
+/// A server process we own. Holds the `Child` handle so the process can be
+/// reaped on stop — otherwise a terminated server lingers as a zombie until
+/// llama-panel itself exits (issue #1).
+struct ServerProcess {
+    child: std::process::Child,
+    port: u16,
+    model: String,
+}
+
+impl ServerProcess {
+    fn info(&self) -> ServerInstance {
+        ServerInstance {
+            pid: self.child.id(),
+            port: self.port,
+            model: self.model.clone(),
+        }
+    }
+}
+
 /// Tracks all server processes we've spawned
-struct OwnedServers(Mutex<Vec<ServerInstance>>);
+struct OwnedServers(Mutex<Vec<ServerProcess>>);
+
+/// Gracefully terminate and reap a child process.
+///
+/// Sends `SIGTERM`, waits up to ~5s for a clean exit, then escalates to
+/// `SIGKILL`. Crucially it always `wait()`s, so the kernel reaps the process
+/// instead of leaving it as a `<defunct>` zombie.
+fn terminate_child(mut child: std::process::Child) {
+    let pid = child.id() as i32;
+    unsafe {
+        libc::kill(pid, libc::SIGTERM);
+    }
+    for _ in 0..50 {
+        match child.try_wait() {
+            Ok(Some(_)) => return, // exited and reaped
+            Ok(None) => std::thread::sleep(Duration::from_millis(100)),
+            Err(_) => return,
+        }
+    }
+    // Still alive after the grace period — force kill and reap.
+    let _ = child.kill();
+    let _ = child.wait();
+}
 
 /// Controls download pause/cancel
 struct DownloadControl {
@@ -313,25 +354,26 @@ async fn detect_binary() -> Result<String, String> {
 
 #[tauri::command]
 async fn stop_server(state: tauri::State<'_, OwnedServers>, port: u16) -> Result<String, String> {
-    let mut servers = state.0.lock().unwrap();
-    let idx = servers
-        .iter()
-        .position(|s| s.port == port)
-        .ok_or("No server on that port")?;
-    let srv = servers.remove(idx);
-    unsafe {
-        libc::kill(srv.pid as i32, libc::SIGTERM);
-    }
-    Ok(format!("Server on port {} stopped", srv.port))
+    let srv = {
+        let mut servers = state.0.lock().unwrap();
+        let idx = servers
+            .iter()
+            .position(|s| s.port == port)
+            .ok_or("No server on that port")?;
+        servers.remove(idx)
+    };
+    let port = srv.port;
+    // Reap in a background thread so the command returns promptly while the
+    // grace period / SIGKILL fallback plays out.
+    std::thread::spawn(move || terminate_child(srv.child));
+    Ok(format!("Server on port {port} stopped"))
 }
 
 #[tauri::command]
 async fn stop_all_servers(state: tauri::State<'_, OwnedServers>) -> Result<String, String> {
-    let mut servers = state.0.lock().unwrap();
-    for srv in servers.drain(..) {
-        unsafe {
-            libc::kill(srv.pid as i32, libc::SIGTERM);
-        }
+    let servers: Vec<ServerProcess> = state.0.lock().unwrap().drain(..).collect();
+    for srv in servers {
+        std::thread::spawn(move || terminate_child(srv.child));
     }
     Ok("All servers stopped".to_string())
 }
@@ -340,7 +382,7 @@ async fn stop_all_servers(state: tauri::State<'_, OwnedServers>) -> Result<Strin
 async fn list_servers(
     state: tauri::State<'_, OwnedServers>,
 ) -> Result<Vec<ServerInstance>, String> {
-    Ok(state.0.lock().unwrap().clone())
+    Ok(state.0.lock().unwrap().iter().map(|s| s.info()).collect())
 }
 
 #[tauri::command]
@@ -397,16 +439,10 @@ async fn start_server(
         .spawn()
         .map_err(|e| format!("Failed to start server: {e}"))?;
 
-    let pid = child.id();
     let model_label = model_path.clone().unwrap_or_default();
 
-    state.0.lock().unwrap().push(ServerInstance {
-        pid,
-        port: port_num,
-        model: model_label,
-    });
-
-    // Stream stderr for model loading progress
+    // Stream stderr for model loading progress — take the handle before the
+    // child is moved into shared state.
     let port_tag = port_num;
     let stderr = child.stderr.take();
     if let Some(stderr) = stderr {
@@ -445,6 +481,12 @@ async fn start_server(
             }
         });
     }
+
+    state.0.lock().unwrap().push(ServerProcess {
+        child,
+        port: port_num,
+        model: model_label,
+    });
 
     Ok(format!("Server started on port {port}"))
 }
@@ -1230,10 +1272,17 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
-                // Perform cleanup before allowing the app to exit
+                // Terminate and reap every owned server before the app exits so
+                // no llama-server processes are left behind.
                 let state = app_handle.state::<OwnedServers>();
-                // Block on the async stop_all_servers function
-                let _ = tauri::async_runtime::block_on(stop_all_servers(state));
+                let servers: Vec<ServerProcess> = state.0.lock().unwrap().drain(..).collect();
+                let handles: Vec<_> = servers
+                    .into_iter()
+                    .map(|srv| std::thread::spawn(move || terminate_child(srv.child)))
+                    .collect();
+                for h in handles {
+                    let _ = h.join();
+                }
             }
         });
 }
