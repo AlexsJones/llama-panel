@@ -143,7 +143,7 @@ function buildServerArgs() {
   if (ngl) { args.push("-ngl", ngl); }
   if (batchSize) { args.push("--batch-size", batchSize); }
   if (ubatchSize) { args.push("--ubatch-size", ubatchSize); }
-  if (parallel && parallel !== "1") { args.push("--parallel", parallel); }
+  if (parallel && parallel !== "4") { args.push("--parallel", parallel); }
   if (host && host !== "127.0.0.1") { args.push("--host", host); }
   if ($("#opt-flash-attn").checked) { args.push("--flash-attn", "on"); }
   if ($("#opt-slots").checked) { args.push("--slots"); }
