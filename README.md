@@ -18,6 +18,8 @@
 - **Run multiple servers simultaneously** -- each model gets its own random port, manage them all from one place
 - **Auto-detects llama-server** -- finds the binary on your PATH or common install locations
 - **Downloads to the standard HuggingFace cache** (`~/.cache/huggingface/hub/`) -- shared with `huggingface-cli`, LM Studio, and other tools
+- **Multimodal aware** -- `mmproj` projector files are recognised as companions rather than separate models and passed to llama-server via `--mmproj`
+- **Respects llama.cpp model-source env vars** -- see [Model locations](#model-locations)
 - **Open llama-server's built-in web UI** in your browser with one click
 - **Configure server options** -- context size, GPU layers, flash attention, parallel slots, and more
 - **Tune parameters** with interactive sliders and presets (Creative, Balanced, Precise, Deterministic)
@@ -38,6 +40,19 @@ Search HuggingFace for GGUF models, download them, and start serving with a few 
 - **Download progress** -- real-time progress bar with ETA, visible from any tab
 - **Popular model suggestions** -- quick-pick chips for Gemma, Qwen, Llama, Mistral, Phi, and more
 - **Multiple servers** -- run several models at once, each on its own port. Connect, open in browser, or stop individually
+
+## Model locations
+
+By default llama-panel reads and writes the standard HuggingFace hub cache at `~/.cache/huggingface/hub/`. The following environment variables (the same ones llama.cpp honours) override or extend where it looks for models:
+
+| Variable | Effect |
+| --- | --- |
+| `HF_HUB_CACHE` | Use this directory as the HuggingFace hub cache. |
+| `HF_HOME` | Use `$HF_HOME/hub` as the hub cache. |
+| `LLAMA_ARG_MODELS_DIR` | Also list loose `.gguf` files stored in this directory (llama-server's `--models` dir). |
+| `LLAMA_CACHE` | Also list loose `.gguf` files stored in this directory. |
+
+Split (multi-part) GGUFs are grouped, and `mmproj-*.gguf` projector files are attached to their model rather than listed separately.
 
 ## Server Configuration
 
