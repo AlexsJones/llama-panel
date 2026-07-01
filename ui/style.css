@@ -804,6 +804,15 @@ input[type="checkbox"] {
 .model-status-badge.loaded { background: rgba(34,197,94,0.15); color: var(--green); }
 .model-status-badge.available { background: rgba(99,102,241,0.15); color: var(--accent); }
 .model-status-badge.loading { background: rgba(234,179,8,0.15); color: var(--yellow); }
+.model-status-badge.vision { background: rgba(168,85,247,0.15); color: #c084fc; }
+
+.hf-vision-tag {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #c084fc;
+  margin-left: 0.4rem;
+}
 
 /* ── Slot Details Pane ───────────────────────────────────────────── */
 #slot-details {
