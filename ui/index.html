@@ -49,6 +49,18 @@
         <!-- Running servers list -->
         <div id="running-servers"></div>
 
+        <!-- Router presets (shown when a router endpoint is set) -->
+        <div id="router-presets-card" class="card wide" style="display:none">
+          <div class="card-header">
+            <h2>Router Presets</h2>
+            <button id="btn-refresh-router" class="secondary-btn">Refresh</button>
+          </div>
+          <p id="router-presets-endpoint" class="muted" style="margin-bottom: 0.75rem"></p>
+          <div id="router-presets-list">
+            <p class="muted">Loading...</p>
+          </div>
+        </div>
+
         <!-- Download from HuggingFace -->
         <div class="card wide">
           <h2>Download from HuggingFace</h2>
@@ -95,6 +107,25 @@
     <!-- Server Tab -->
     <section id="tab-server" class="tab-panel">
       <div class="panel-grid">
+        <!-- Router endpoint setting -->
+        <div class="card wide">
+          <h2>Router Endpoint</h2>
+          <p class="muted" style="margin-bottom: 0.75rem">
+            Point llama-panel at a <code>llama-server</code> running in router mode. While set, presets are
+            listed, loaded and unloaded through that server and llama-panel starts no servers of its own.
+            Leave blank to manage servers locally.
+          </p>
+          <div class="param-group">
+            <div class="param-row">
+              <label for="router-endpoint-input">Endpoint</label>
+              <input type="text" class="param-val wide-input" id="router-endpoint-input"
+                     placeholder="http://127.0.0.1:8080" autocomplete="off" />
+              <button id="btn-save-router" class="primary-btn">Save</button>
+            </div>
+          </div>
+          <span id="router-endpoint-status" class="muted" style="display:block; margin-top:0.5rem"></span>
+        </div>
+
         <!-- Running Servers + Server Selector -->
         <div class="card wide">
           <div class="card-header">
