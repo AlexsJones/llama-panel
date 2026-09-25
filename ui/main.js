@@ -9,6 +9,8 @@ let playgroundMode = "chat";
 let slotPollTimer = null;
 let detectedBinary = "";
 let runningServers = []; // [{port, model, name, status}]
+let routerEndpoint = ""; // router-mode llama-server URL; empty = manage servers locally
+let routerPollTimer = null;
 
 // ── DOM refs ───────────────────────────────────────────────────────
 const $ = (sel) => document.querySelector(sel);
@@ -665,6 +667,12 @@ async function refreshLocalModels() {
       return;
     }
 
+    // With a router endpoint set the router owns the models; don't offer to
+    // start a second server on the same GGUFs.
+    const startAttrs = routerEndpoint
+      ? ` disabled title="A router endpoint is set: load presets from the router instead"`
+      : "";
+
     container.innerHTML = models.map((m) => {
       const runningSrv = runningServers.find((s) => s.model === m.path);
       const isRunning = !!runningSrv;
@@ -681,7 +689,7 @@ async function refreshLocalModels() {
         </div>
         ${visionBadge}
         ${runBadge}
-        <button class="primary-btn model-start-btn" data-path="${escapeHtml(m.path)}" data-name="${escapeHtml(m.name)}" data-mmproj="${escapeHtml(m.mmproj || "")}">${isRunning ? "Start Another" : "Start"}</button>
+        <button class="primary-btn model-start-btn" data-path="${escapeHtml(m.path)}" data-name="${escapeHtml(m.name)}" data-mmproj="${escapeHtml(m.mmproj || "")}"${startAttrs}>${isRunning ? "Start Another" : "Start"}</button>
         <button class="danger-btn model-delete-btn" data-path="${escapeHtml(m.path)}" data-name="${escapeHtml(m.name)}" ${isRunning ? "disabled" : ""}>Delete</button>
       </div>`;
     }).join("");
@@ -790,6 +798,7 @@ $("#launch-modal-start").addEventListener("click", () => {
 
 // ── Start Local Model ─────────────────────────────────────────────
 function startLocalModel(modelPath, modelName, mmproj) {
+  if (routerEndpoint) return;
   showLaunchModal(modelPath, modelName, mmproj);
 }
 
@@ -974,6 +983,117 @@ $("#btn-stop-all").addEventListener("click", async () => {
 $("#server-bin-path").addEventListener("change", () => {
   const val = $("#server-bin-path").value.trim();
   if (val) detectedBinary = val;
+});
+
+// ── Router Endpoint (issue #3) ─────────────────────────────────────
+// When set, llama-panel is a client of a llama-server in router mode: presets
+// are listed, loaded and unloaded through it and no local process is started.
+const ROUTER_POLL_MS = 5000;
+
+function presetBadge(state) {
+  switch (state?.kind) {
+    case "loaded":
+      return `<span class="model-status-badge loaded">Loaded</span>`;
+    case "sleeping":
+      return `<span class="model-status-badge sleeping" title="Out of memory; the next request reloads it">Idle</span>`;
+    case "loading":
+      return `<span class="preset-spinner" title="Loading"></span>`;
+    case "failed": {
+      const code = state.exit_code ?? "unknown";
+      return `<span class="model-status-badge failed" title="The preset's process exited with code ${code}">Failed (exit ${code})</span>`;
+    }
+    case "other":
+      return `<span class="model-status-badge raw">${escapeHtml(state.value)}</span>`;
+    default:
+      // "unloaded", or no status field on older llama-server builds
+      return "";
+  }
+}
+
+function isResident(state) {
+  return ["loaded", "sleeping", "loading"].includes(state?.kind);
+}
+
+async function refreshRouterPresets() {
+  if (!routerEndpoint) return;
+  const container = $("#router-presets-list");
+
+  try {
+    const presets = await invoke("list_available_models", { url: routerEndpoint });
+    const loaded = presets.filter((p) => p.state?.kind === "loaded").length;
+    setStatus("connected", `Router: ${presets.length} presets, ${loaded} loaded`);
+
+    if (presets.length === 0) {
+      container.innerHTML = `<p class="muted">The router lists no presets.</p>`;
+      return;
+    }
+
+    container.innerHTML = presets.map((p) => {
+      const resident = isResident(p.state);
+      return `<div class="model-card">
+        <div class="model-card-info">
+          <div class="model-card-name" title="${escapeHtml(p.id)}">${escapeHtml(p.id)}</div>
+        </div>
+        ${presetBadge(p.state)}
+        <button class="${resident ? "danger-btn" : "primary-btn"} router-preset-btn" data-id="${escapeHtml(p.id)}" data-load="${resident ? "" : "1"}">${resident ? "Unload" : "Load"}</button>
+      </div>`;
+    }).join("");
+
+    container.querySelectorAll(".router-preset-btn").forEach((btn) => {
+      btn.addEventListener("click", () => routerLoadPreset(btn, btn.dataset.id, !!btn.dataset.load));
+    });
+  } catch (e) {
+    setStatus("disconnected", `Router unreachable: ${e}`);
+    container.innerHTML = `<p class="muted">Could not reach the router: ${escapeHtml(String(e))}</p>`;
+  }
+}
+
+async function routerLoadPreset(btn, id, load) {
+  btn.disabled = true;
+  try {
+    await invoke(load ? "load_model" : "unload_model", { url: routerEndpoint, model: id });
+  } catch (e) {
+    alert(`Failed to ${load ? "load" : "unload"} ${id}: ${e}`);
+  }
+  refreshRouterPresets();
+}
+
+function stopRouterPolling() {
+  if (routerPollTimer) {
+    clearInterval(routerPollTimer);
+    routerPollTimer = null;
+  }
+}
+
+function applyRouterMode() {
+  stopRouterPolling();
+  $("#router-endpoint-input").value = routerEndpoint;
+  $("#router-presets-card").style.display = routerEndpoint ? "block" : "none";
+  $("#router-presets-endpoint").textContent = routerEndpoint;
+
+  if (routerEndpoint) {
+    refreshRouterPresets();
+    routerPollTimer = setInterval(refreshRouterPresets, ROUTER_POLL_MS);
+  } else {
+    renderRunningServers();
+  }
+  refreshLocalModels();
+}
+
+$("#btn-refresh-router").addEventListener("click", refreshRouterPresets);
+
+$("#btn-save-router").addEventListener("click", async () => {
+  const status = $("#router-endpoint-status");
+  try {
+    const settings = await invoke("set_router_endpoint", { url: $("#router-endpoint-input").value });
+    routerEndpoint = settings.router_endpoint || "";
+    status.textContent = routerEndpoint
+      ? "Saved. Presets are managed through the router."
+      : "Cleared. llama-panel manages its own servers.";
+    applyRouterMode();
+  } catch (e) {
+    status.textContent = `Error: ${e}`;
+  }
 });
 
 // ── Persistent Slot Bar ────────────────────────────────────────────
@@ -1405,6 +1525,13 @@ $("#oc-config-save").addEventListener("click", async () => {
     // not found — modal will show when user tries to start
   }
 
-  refreshLocalModels();
+  try {
+    const settings = await invoke("get_settings");
+    routerEndpoint = settings.router_endpoint || "";
+  } catch (e) {
+    $("#router-endpoint-status").textContent = `Could not read settings: ${e}`;
+  }
+
+  applyRouterMode();
   refreshOpencodeModels();
 })();

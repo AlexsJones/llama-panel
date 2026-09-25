@@ -239,18 +239,83 @@ async fn get_slots(url: String) -> Result<serde_json::Value, String> {
         .map_err(|e| e.to_string())
 }
 
-/// List all models known to the server (router mode)
+/// Load state of one router preset, taken from `status` on its entry in the
+/// router's model list (issue #3).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum PresetState {
+    Loaded,
+    /// Weights and KV cache are out of memory, but the next request reloads
+    /// the preset automatically.
+    Sleeping,
+    Loading,
+    Unloaded,
+    /// `unloaded` with `failed: true`: the preset's process exited.
+    Failed { exit_code: Option<i64> },
+    /// A `status.value` we don't recognise, passed through as-is.
+    Other { value: String },
+    /// No `status` field (older llama-server builds or a plain server).
+    NoStatus,
+}
+
+fn preset_state(entry: &serde_json::Value) -> PresetState {
+    let status = &entry["status"];
+    let Some(value) = status["value"].as_str() else {
+        return PresetState::NoStatus;
+    };
+    match value {
+        "loaded" => PresetState::Loaded,
+        "sleeping" => PresetState::Sleeping,
+        "loading" => PresetState::Loading,
+        "unloaded" if status["failed"].as_bool() == Some(true) => PresetState::Failed {
+            exit_code: status["exit_code"].as_i64(),
+        },
+        "unloaded" => PresetState::Unloaded,
+        other => PresetState::Other {
+            value: other.to_string(),
+        },
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct RouterPreset {
+    id: String,
+    state: PresetState,
+}
+
+/// Turn a router `{"data": [...]}` model list into presets with their state.
+/// Entries without an `id` are skipped.
+fn parse_router_presets(body: &serde_json::Value) -> Vec<RouterPreset> {
+    body["data"]
+        .as_array()
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|entry| {
+                    Some(RouterPreset {
+                        id: entry["id"].as_str()?.to_string(),
+                        state: preset_state(entry),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// List all presets known to the server with their load state (router mode:
+/// GET /models)
 #[tauri::command]
-async fn list_available_models(url: String) -> Result<serde_json::Value, String> {
+async fn list_available_models(url: String) -> Result<Vec<RouterPreset>, String> {
     let url = url.trim_end_matches('/');
-    client()
+    let body: serde_json::Value = client()
         .get(format!("{url}/models"))
         .send()
         .await
         .map_err(|e| e.to_string())?
         .json()
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    Ok(parse_router_presets(&body))
 }
 
 /// Load a model by name or HF repo (router mode: POST /models/load)
@@ -293,6 +358,71 @@ async fn unload_model(url: String, model: String) -> Result<serde_json::Value, S
     }
 
     resp.json().await.map_err(|e| e.to_string())
+}
+
+// ── Settings ─────────────────────────────────────────────────────────
+
+/// Persistent llama-panel settings.
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Settings {
+    /// Base URL of a llama-server running in router mode (issue #3). When
+    /// set, llama-panel lists, loads and unloads presets through it and never
+    /// starts its own llama-server process.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub router_endpoint: Option<String>,
+}
+
+fn settings_path() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    PathBuf::from(home)
+        .join(".config")
+        .join("llama-panel")
+        .join("settings.json")
+}
+
+/// Read settings from `path`. A missing file means defaults.
+fn read_settings(path: &std::path::Path) -> Result<Settings, String> {
+    if !path.exists() {
+        return Ok(Settings::default());
+    }
+    let content =
+        std::fs::read_to_string(path).map_err(|e| format!("Failed to read settings: {e}"))?;
+    serde_json::from_str(&content).map_err(|e| format!("Invalid settings JSON: {e}"))
+}
+
+fn write_settings(path: &std::path::Path, settings: &Settings) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create config dir: {e}"))?;
+    }
+    let formatted =
+        serde_json::to_string_pretty(settings).map_err(|e| format!("Serialize error: {e}"))?;
+    std::fs::write(path, formatted).map_err(|e| format!("Failed to write settings: {e}"))
+}
+
+/// Normalise a user-entered router endpoint. Blank means unset.
+fn normalize_router_endpoint(raw: &str) -> Result<Option<String>, String> {
+    let url = raw.trim().trim_end_matches('/');
+    if url.is_empty() {
+        return Ok(None);
+    }
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err("Router endpoint must start with http:// or https://".to_string());
+    }
+    Ok(Some(url.to_string()))
+}
+
+#[tauri::command]
+async fn get_settings() -> Result<Settings, String> {
+    read_settings(&settings_path())
+}
+
+#[tauri::command]
+async fn set_router_endpoint(url: String) -> Result<Settings, String> {
+    let path = settings_path();
+    let mut settings = read_settings(&path)?;
+    settings.router_endpoint = normalize_router_endpoint(&url)?;
+    write_settings(&path, &settings)?;
+    Ok(settings)
 }
 
 // ── Completions ──────────────────────────────────────────────────────
@@ -471,6 +601,15 @@ async fn start_server(
     mmproj_path: Option<String>,
 ) -> Result<String, String> {
     use tauri::Emitter;
+
+    // With a router endpoint set, the router owns the models; starting a
+    // second llama-server here would fight it over the same GGUFs (issue #3).
+    if let Some(endpoint) = read_settings(&settings_path())?.router_endpoint {
+        return Err(format!(
+            "A router endpoint is set ({endpoint}), so llama-panel does not start its own \
+             llama-server. Load presets through the router, or clear the setting."
+        ));
+    }
 
     let port_num: u16 = port.parse().map_err(|_| "Invalid port")?;
 
@@ -1409,6 +1548,8 @@ pub fn run() {
             list_available_models,
             load_model,
             unload_model,
+            get_settings,
+            set_router_endpoint,
             detect_binary,
             stop_server,
             stop_all_servers,
@@ -1450,4 +1591,140 @@ pub fn run() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn state_of(status: serde_json::Value) -> PresetState {
+        preset_state(&json!({"id": "m", "status": status}))
+    }
+
+    #[test]
+    fn preset_state_maps_known_values() {
+        assert_eq!(state_of(json!({"value": "loaded"})), PresetState::Loaded);
+        assert_eq!(state_of(json!({"value": "sleeping"})), PresetState::Sleeping);
+        assert_eq!(state_of(json!({"value": "loading"})), PresetState::Loading);
+        assert_eq!(state_of(json!({"value": "unloaded"})), PresetState::Unloaded);
+    }
+
+    #[test]
+    fn preset_state_failed_carries_exit_code() {
+        assert_eq!(
+            state_of(json!({"value": "unloaded", "failed": true, "exit_code": 1})),
+            PresetState::Failed { exit_code: Some(1) }
+        );
+        assert_eq!(
+            state_of(json!({"value": "unloaded", "failed": true})),
+            PresetState::Failed { exit_code: None }
+        );
+        assert_eq!(
+            state_of(json!({"value": "unloaded", "failed": false, "exit_code": 0})),
+            PresetState::Unloaded
+        );
+    }
+
+    #[test]
+    fn preset_state_passes_unknown_values_through() {
+        assert_eq!(
+            state_of(json!({"value": "downloading"})),
+            PresetState::Other {
+                value: "downloading".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn preset_state_without_status_is_no_status() {
+        assert_eq!(preset_state(&json!({"id": "m"})), PresetState::NoStatus);
+        assert_eq!(state_of(json!({})), PresetState::NoStatus);
+        assert_eq!(state_of(json!("loaded")), PresetState::NoStatus);
+    }
+
+    #[test]
+    fn preset_state_serializes_with_kind_tag() {
+        assert_eq!(
+            serde_json::to_value(PresetState::Failed { exit_code: Some(1) }).unwrap(),
+            json!({"kind": "failed", "exit_code": 1})
+        );
+        assert_eq!(
+            serde_json::to_value(PresetState::NoStatus).unwrap(),
+            json!({"kind": "no_status"})
+        );
+    }
+
+    #[test]
+    fn parse_router_presets_keeps_several_loaded() {
+        let body = json!({"data": [
+            {"id": "a", "status": {"value": "loaded"}},
+            {"id": "b", "status": {"value": "loaded"}},
+            {"id": "c", "status": {"value": "unloaded"}},
+            {"id": "d"},
+            {"status": {"value": "loaded"}},
+        ]});
+        let presets = parse_router_presets(&body);
+        let ids: Vec<&str> = presets.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(ids, ["a", "b", "c", "d"]);
+        let loaded = presets
+            .iter()
+            .filter(|p| p.state == PresetState::Loaded)
+            .count();
+        assert_eq!(loaded, 2);
+        assert_eq!(presets[3].state, PresetState::NoStatus);
+    }
+
+    #[test]
+    fn parse_router_presets_handles_missing_data() {
+        assert!(parse_router_presets(&json!({})).is_empty());
+        assert!(parse_router_presets(&json!({"data": null})).is_empty());
+    }
+
+    #[test]
+    fn normalize_router_endpoint_trims_and_validates() {
+        assert_eq!(normalize_router_endpoint(""), Ok(None));
+        assert_eq!(normalize_router_endpoint("   "), Ok(None));
+        assert_eq!(
+            normalize_router_endpoint(" http://127.0.0.1:8080/ "),
+            Ok(Some("http://127.0.0.1:8080".to_string()))
+        );
+        assert_eq!(
+            normalize_router_endpoint("https://llm.local"),
+            Ok(Some("https://llm.local".to_string()))
+        );
+        assert!(normalize_router_endpoint("127.0.0.1:8080").is_err());
+    }
+
+    fn temp_settings_path(name: &str) -> PathBuf {
+        std::env::temp_dir()
+            .join(format!("llama-panel-test-{}-{name}", std::process::id()))
+            .join("settings.json")
+    }
+
+    #[test]
+    fn settings_missing_file_is_default() {
+        let path = temp_settings_path("missing");
+        assert_eq!(read_settings(&path), Ok(Settings::default()));
+    }
+
+    #[test]
+    fn settings_round_trip_router_endpoint() {
+        let path = temp_settings_path("round-trip");
+        let settings = Settings {
+            router_endpoint: Some("http://127.0.0.1:8080".to_string()),
+        };
+        write_settings(&path, &settings).unwrap();
+        assert_eq!(read_settings(&path), Ok(settings));
+
+        write_settings(&path, &Settings::default()).unwrap();
+        assert_eq!(read_settings(&path), Ok(Settings::default()));
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn settings_tolerate_unknown_and_missing_fields() {
+        let s: Settings = serde_json::from_str(r#"{"something_else": 1}"#).unwrap();
+        assert_eq!(s, Settings::default());
+    }
 }
