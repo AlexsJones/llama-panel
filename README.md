@@ -5,7 +5,7 @@
 <h1 align="center">llama-panel</h1>
 
 <p align="center">
-  A native macOS desktop app for managing and interacting with <a href="https://github.com/ggerganov/llama.cpp/tree/master/examples/server">llama-server</a> instances. Built with <a href="https://tauri.app/">Tauri</a>.
+  A native desktop app for macOS and Linux that manages and interacts with <a href="https://github.com/ggerganov/llama.cpp/tree/master/examples/server">llama-server</a> instances. Built with <a href="https://tauri.app/">Tauri</a>.
 </p>
 
 <p align="center">
@@ -78,7 +78,11 @@ Configure llama-server options from the Server tab. Settings apply when starting
 
 ## Install
 
-### Homebrew (recommended)
+Release builds cover macOS (universal) and Linux amd64. The Linux artifacts are `llama-panel-<tag>-linux-amd64.deb` and `llama-panel-<tag>-linux-amd64.AppImage` on the [Releases](https://github.com/AlexsJones/llama-panel/releases) page.
+
+### macOS
+
+#### Homebrew (recommended)
 
 ```bash
 brew tap AlexsJones/llama-panel
@@ -87,29 +91,63 @@ brew install llama-panel
 
 This installs the `.app` bundle to `/Applications` and a `llama-panel` command on your `PATH`.
 
-### Download from GitHub Releases
+#### Download from GitHub Releases
 
-Grab the latest `.tar.gz` from [Releases](https://github.com/AlexsJones/llama-panel/releases), extract it, and drag `llama-panel.app` to `/Applications`:
+Grab the latest `.tar.gz`, extract it, and drag `llama-panel.app` to `/Applications`:
 
 ```bash
-tar -xzf llama-panel-v*.tar.gz
+tar -xzf llama-panel-v*-macos-universal.tar.gz
 mv llama-panel.app /Applications/
+```
+
+### Linux (amd64)
+
+The `.deb` depends on `libwebkit2gtk-4.1-0` and `libgtk-3-0`. `apt` installs those for you:
+
+```bash
+sudo apt install ./llama-panel-v*-linux-amd64.deb
+```
+
+The AppImage is a single file. It needs FUSE to mount (`libfuse2` on Ubuntu if the launch fails immediately). If FUSE is unavailable, `--appimage-extract-and-run` unpacks it instead:
+
+```bash
+chmod +x llama-panel-v*-linux-amd64.AppImage
+./llama-panel-v*-linux-amd64.AppImage
+```
+
+On Wayland, WebKitGTK's DMA-BUF renderer can freeze the window while you scroll the Models tab: clicks stop landing, the console stays quiet, and the process is still running. Launching with the renderer disabled avoids that:
+
+```bash
+WEBKIT_DISABLE_DMABUF_RENDERER=1 ./llama-panel-v*-linux-amd64.AppImage
 ```
 
 ### From source
 
-Requires [Rust](https://rustup.rs/) and the [Tauri CLI](https://tauri.app/start/):
+Requires [Rust](https://rustup.rs/) and the [Tauri CLI](https://tauri.app/start/).
+
+On Linux, install the same libraries the release workflow uses:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+```
+
+Then, on either platform:
 
 ```bash
 cargo install tauri-cli
 cargo tauri build
 ```
 
-The `.app` bundle will be in `target/release/bundle/macos/`.
+macOS writes `llama-panel.app` to `target/release/bundle/macos/`. Linux writes the `.deb` to `target/release/bundle/deb/` and the AppImage to `target/release/bundle/appimage/`. To match the release workflow on Linux, build those two bundles explicitly:
+
+```bash
+cargo tauri build --bundles deb appimage
+```
 
 ## Usage
 
-Launch from Spotlight, the Applications folder, or the command line:
+On macOS, launch from Spotlight, the Applications folder, or the command line. On Linux, launch the AppImage, or the `llama-panel` command the `.deb` installs:
 
 ```bash
 llama-panel
