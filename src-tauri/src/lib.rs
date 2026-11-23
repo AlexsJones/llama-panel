@@ -251,9 +251,13 @@ enum PresetState {
     Loading,
     Unloaded,
     /// `unloaded` with `failed: true`: the preset's process exited.
-    Failed { exit_code: Option<i64> },
+    Failed {
+        exit_code: Option<i64>,
+    },
     /// A `status.value` we don't recognise, passed through as-is.
-    Other { value: String },
+    Other {
+        value: String,
+    },
     /// No `status` field (older llama-server builds or a plain server).
     NoStatus,
 }
@@ -427,11 +431,29 @@ async fn set_router_endpoint(url: String) -> Result<Settings, String> {
 
 // ── Completions ──────────────────────────────────────────────────────
 
+/// Router mode selects a child server from the `model` field on both
+/// `/completion` and `/v1/chat/completions`. A missing or blank id leaves the
+/// body unchanged, which is what a single-model server expects.
+fn with_model_param(mut body: serde_json::Value, model: Option<&str>) -> serde_json::Value {
+    let Some(model) = model.map(str::trim).filter(|m| !m.is_empty()) else {
+        return body;
+    };
+    if let Some(map) = body.as_object_mut() {
+        map.insert(
+            "model".to_string(),
+            serde_json::Value::String(model.to_string()),
+        );
+    }
+    body
+}
+
 #[tauri::command]
 async fn send_completion(
     url: String,
     body: serde_json::Value,
+    model: Option<String>,
 ) -> Result<serde_json::Value, String> {
+    let body = with_model_param(body, model.as_deref());
     let url = url.trim_end_matches('/');
     let resp = reqwest::Client::builder()
         .timeout(Duration::from_secs(600))
@@ -456,7 +478,9 @@ async fn send_completion(
 async fn send_chat_completion(
     url: String,
     body: serde_json::Value,
+    model: Option<String>,
 ) -> Result<serde_json::Value, String> {
+    let body = with_model_param(body, model.as_deref());
     let url = url.trim_end_matches('/');
     let resp = reqwest::Client::builder()
         .timeout(Duration::from_secs(600))
@@ -1363,6 +1387,17 @@ async fn read_opencode_config() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
+/// Base URL written into the OpenCode llama.cpp provider. An explicit URL
+/// (the router endpoint plus `/v1`) wins; otherwise the local server port is
+/// used. OpenCode sends the model id key as the request's `model` field.
+fn opencode_provider_base_url(port: u16, base_url: Option<&str>) -> String {
+    match base_url.map(str::trim).filter(|url| !url.is_empty()) {
+        Some(url) => url.trim_end_matches('/').to_string(),
+        None => format!("http://127.0.0.1:{port}/v1"),
+    }
+}
+
+#[tauri::command]
 async fn add_opencode_model(
     port: u16,
     model_id: String,
@@ -1370,6 +1405,7 @@ async fn add_opencode_model(
     context: u32,
     output: u32,
     favourite: bool,
+    base_url: Option<String>,
 ) -> Result<String, String> {
     let path = opencode_config_path();
 
@@ -1389,8 +1425,10 @@ async fn add_opencode_model(
         })
     };
 
-    // Ensure llama.cpp provider exists with correct port
-    let base_url = format!("http://127.0.0.1:{port}/v1");
+    // Ensure llama.cpp provider exists. The model id is the config key, which
+    // OpenCode sends as `model`. Router presets pass their preset id and the
+    // router's `/v1` URL; local servers keep using the port.
+    let base_url = opencode_provider_base_url(port, base_url.as_deref());
     let provider = config
         .as_object_mut()
         .ok_or("Invalid config")?
@@ -1605,9 +1643,15 @@ mod tests {
     #[test]
     fn preset_state_maps_known_values() {
         assert_eq!(state_of(json!({"value": "loaded"})), PresetState::Loaded);
-        assert_eq!(state_of(json!({"value": "sleeping"})), PresetState::Sleeping);
+        assert_eq!(
+            state_of(json!({"value": "sleeping"})),
+            PresetState::Sleeping
+        );
         assert_eq!(state_of(json!({"value": "loading"})), PresetState::Loading);
-        assert_eq!(state_of(json!({"value": "unloaded"})), PresetState::Unloaded);
+        assert_eq!(
+            state_of(json!({"value": "unloaded"})),
+            PresetState::Unloaded
+        );
     }
 
     #[test]
@@ -1676,6 +1720,29 @@ mod tests {
     }
 
     #[test]
+    fn parse_router_presets_accepts_llama_server_router_payload() {
+        // Captured from llama-server b12651 (`--models-dir`, no `-m`).
+        let body = json!({
+            "data": [{
+                "id": "stories260K",
+                "object": "model",
+                "owned_by": "llamacpp",
+                "status": {
+                    "value": "loaded",
+                    "args": ["llama-server", "--model", "/tmp/models/stories260K.gguf"],
+                    "preset": "[stories260K]\nmodel = /tmp/models/stories260K.gguf\n"
+                },
+                "source": "models_dir"
+            }],
+            "object": "list"
+        });
+        let presets = parse_router_presets(&body);
+        assert_eq!(presets.len(), 1);
+        assert_eq!(presets[0].id, "stories260K");
+        assert_eq!(presets[0].state, PresetState::Loaded);
+    }
+
+    #[test]
     fn parse_router_presets_handles_missing_data() {
         assert!(parse_router_presets(&json!({})).is_empty());
         assert!(parse_router_presets(&json!({"data": null})).is_empty());
@@ -1694,6 +1761,37 @@ mod tests {
             Ok(Some("https://llm.local".to_string()))
         );
         assert!(normalize_router_endpoint("127.0.0.1:8080").is_err());
+    }
+
+    #[test]
+    fn with_model_param_sets_router_model_and_leaves_single_server_alone() {
+        let body = json!({"messages": [{"role": "user", "content": "hi"}]});
+        assert_eq!(
+            with_model_param(body.clone(), Some("chat-model")),
+            json!({"messages": [{"role": "user", "content": "hi"}], "model": "chat-model"})
+        );
+        assert_eq!(with_model_param(body.clone(), None), body);
+        assert_eq!(with_model_param(body.clone(), Some("  ")), body);
+        assert_eq!(
+            with_model_param(body, Some("  preset  ")),
+            json!({"messages": [{"role": "user", "content": "hi"}], "model": "preset"})
+        );
+    }
+
+    #[test]
+    fn opencode_provider_base_url_prefers_router_endpoint() {
+        assert_eq!(
+            opencode_provider_base_url(8080, Some(" http://127.0.0.1:8080/v1/ ")),
+            "http://127.0.0.1:8080/v1"
+        );
+        assert_eq!(
+            opencode_provider_base_url(9090, None),
+            "http://127.0.0.1:9090/v1"
+        );
+        assert_eq!(
+            opencode_provider_base_url(9090, Some("")),
+            "http://127.0.0.1:9090/v1"
+        );
     }
 
     fn temp_settings_path(name: &str) -> PathBuf {

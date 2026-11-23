@@ -11,6 +11,11 @@ let detectedBinary = "";
 let runningServers = []; // [{port, model, name, status}]
 let routerEndpoint = ""; // router-mode llama-server URL; empty = manage servers locally
 let routerPollTimer = null;
+let routerPresets = [];
+// Preset ids whose load/unload request has not returned. The 5s poll rebuilds
+// the buttons, so the disabled state has to live here rather than on the node.
+const routerInFlight = new Set();
+let routerRefreshGen = 0;
 
 // ── DOM refs ───────────────────────────────────────────────────────
 const $ = (sel) => document.querySelector(sel);
@@ -1014,48 +1019,92 @@ function isResident(state) {
   return ["loaded", "sleeping", "loading"].includes(state?.kind);
 }
 
+function routerApiBase() {
+  return `${routerEndpoint.replace(/\/+$/, "")}/v1`;
+}
+
+function syncPlaygroundModelSelect(presets) {
+  const row = $("#playground-model-row");
+  const select = $("#playground-model");
+  if (!row || !select) return;
+  if (!routerEndpoint) {
+    row.style.display = "none";
+    select.innerHTML = "";
+    return;
+  }
+  row.style.display = "";
+  const previous = select.value;
+  select.innerHTML = presets.map((p) => {
+    const kind = p.state?.kind;
+    const label = kind && kind !== "unloaded" && kind !== "no_status" ? `${p.id} (${kind})` : p.id;
+    return `<option value="${escapeHtml(p.id)}">${escapeHtml(label)}</option>`;
+  }).join("");
+  if (previous && presets.some((p) => p.id === previous)) {
+    select.value = previous;
+  } else {
+    const preferred = presets.find((p) => p.state?.kind === "loaded") || presets[0];
+    if (preferred) select.value = preferred.id;
+  }
+}
+
+// Preset id sent as `model`. Empty when llama-panel is managing its own server.
+function selectedRouterModel() {
+  if (!routerEndpoint) return "";
+  return $("#playground-model")?.value || "";
+}
+
 async function refreshRouterPresets() {
   if (!routerEndpoint) return;
+  const gen = ++routerRefreshGen;
   const container = $("#router-presets-list");
 
   try {
     const presets = await invoke("list_available_models", { url: routerEndpoint });
+    if (gen !== routerRefreshGen || !routerEndpoint) return;
+    routerPresets = presets;
     const loaded = presets.filter((p) => p.state?.kind === "loaded").length;
     setStatus("connected", `Router: ${presets.length} presets, ${loaded} loaded`);
+    syncPlaygroundModelSelect(presets);
 
     if (presets.length === 0) {
       container.innerHTML = `<p class="muted">The router lists no presets.</p>`;
-      return;
+    } else {
+      container.innerHTML = presets.map((p) => {
+        const resident = isResident(p.state);
+        const busy = routerInFlight.has(p.id);
+        return `<div class="model-card">
+          <div class="model-card-info">
+            <div class="model-card-name" title="${escapeHtml(p.id)}">${escapeHtml(p.id)}</div>
+          </div>
+          ${presetBadge(p.state)}
+          <button class="${resident ? "danger-btn" : "primary-btn"} router-preset-btn" data-id="${escapeHtml(p.id)}" data-load="${resident ? "" : "1"}"${busy ? " disabled" : ""}>${resident ? "Unload" : "Load"}</button>
+        </div>`;
+      }).join("");
+
+      container.querySelectorAll(".router-preset-btn").forEach((btn) => {
+        btn.addEventListener("click", () => routerLoadPreset(btn, btn.dataset.id, !!btn.dataset.load));
+      });
     }
-
-    container.innerHTML = presets.map((p) => {
-      const resident = isResident(p.state);
-      return `<div class="model-card">
-        <div class="model-card-info">
-          <div class="model-card-name" title="${escapeHtml(p.id)}">${escapeHtml(p.id)}</div>
-        </div>
-        ${presetBadge(p.state)}
-        <button class="${resident ? "danger-btn" : "primary-btn"} router-preset-btn" data-id="${escapeHtml(p.id)}" data-load="${resident ? "" : "1"}">${resident ? "Unload" : "Load"}</button>
-      </div>`;
-    }).join("");
-
-    container.querySelectorAll(".router-preset-btn").forEach((btn) => {
-      btn.addEventListener("click", () => routerLoadPreset(btn, btn.dataset.id, !!btn.dataset.load));
-    });
+    renderOpencodeRunningServers();
   } catch (e) {
+    if (gen !== routerRefreshGen || !routerEndpoint) return;
     setStatus("disconnected", `Router unreachable: ${e}`);
     container.innerHTML = `<p class="muted">Could not reach the router: ${escapeHtml(String(e))}</p>`;
   }
 }
 
 async function routerLoadPreset(btn, id, load) {
-  btn.disabled = true;
+  if (!id || routerInFlight.has(id)) return;
+  routerInFlight.add(id);
+  if (btn) btn.disabled = true;
   try {
     await invoke(load ? "load_model" : "unload_model", { url: routerEndpoint, model: id });
   } catch (e) {
     alert(`Failed to ${load ? "load" : "unload"} ${id}: ${e}`);
+  } finally {
+    routerInFlight.delete(id);
+    await refreshRouterPresets();
   }
-  refreshRouterPresets();
 }
 
 function stopRouterPolling() {
@@ -1072,10 +1121,24 @@ function applyRouterMode() {
   $("#router-presets-endpoint").textContent = routerEndpoint;
 
   if (routerEndpoint) {
+    connectToServer(routerEndpoint);
     refreshRouterPresets();
     routerPollTimer = setInterval(refreshRouterPresets, ROUTER_POLL_MS);
   } else {
+    routerPresets = [];
+    syncPlaygroundModelSelect([]);
+    const ownsCurrent = runningServers.some((s) => {
+      return serverUrl === `http://localhost:${s.port}` || serverUrl === `http://127.0.0.1:${s.port}`;
+    });
+    if (serverUrl && !ownsCurrent) {
+      serverUrl = "";
+      connected = false;
+      $("#btn-send").disabled = true;
+      btnRefresh.disabled = true;
+      setStatus("disconnected", "No server running");
+    }
     renderRunningServers();
+    renderOpencodeRunningServers();
   }
   refreshLocalModels();
 }
@@ -1238,6 +1301,14 @@ async function sendPrompt() {
   $(".playground-layout").classList.add("has-response");
 
   const params = getParams();
+  const model = selectedRouterModel();
+  if (routerEndpoint && !model) {
+    output.textContent = "Select a router model first. The router uses the model field to choose a preset.";
+    meta.textContent = "";
+    btnSend.style.display = "inline-block";
+    btnCancel.style.display = "none";
+    return;
+  }
   const startTime = performance.now();
 
   try {
@@ -1247,6 +1318,7 @@ async function sendPrompt() {
       result = await invoke("send_completion", {
         url: serverUrl,
         body: { prompt: promptText, ...params },
+        model: model || null,
       });
       output.textContent = result.content || JSON.stringify(result, null, 2);
     } else {
@@ -1269,6 +1341,7 @@ async function sendPrompt() {
       result = await invoke("send_chat_completion", {
         url: serverUrl,
         body: chatBody,
+        model: model || null,
       });
 
       const choice = result.choices?.[0];
@@ -1350,16 +1423,41 @@ $("#binary-modal-input").addEventListener("keydown", (e) => {
 // ── Opencode Integration ──────────────────────────────────────────
 $("#btn-refresh-oc").addEventListener("click", refreshOpencodeModels);
 
+function opencodeAddButtons(modelId, displayName, port, baseUrl) {
+  const portAttr = port ? ` data-port="${port}"` : "";
+  const baseAttr = baseUrl ? ` data-base-url="${escapeHtml(baseUrl)}"` : "";
+  const attrs = `data-model-id="${escapeHtml(modelId)}" data-name="${escapeHtml(displayName)}"${portAttr}${baseAttr} style="font-size:0.75rem;padding:0.3rem 0.6rem"`;
+  return `<button class="primary-btn oc-add-btn" ${attrs}>Add to opencode</button>
+        <button class="open-btn oc-fav-btn" ${attrs}>Add as favourite</button>`;
+}
+
 function renderOpencodeRunningServers() {
   const container = $("#oc-running-servers");
+  if (!container) return;
   const ready = runningServers.filter((s) => s.status === "ready");
+  const presets = routerEndpoint ? routerPresets : [];
 
-  if (ready.length === 0) {
-    container.innerHTML = `<p class="muted">No servers running. Start a model from the Models tab first.</p>`;
+  if (ready.length === 0 && presets.length === 0) {
+    container.innerHTML = routerEndpoint
+      ? `<p class="muted">The router lists no presets yet.</p>`
+      : `<p class="muted">No servers running. Start a model from the Models tab first.</p>`;
     return;
   }
 
-  container.innerHTML = ready.map((srv) => {
+  const presetCards = presets.map((p) => {
+    return `<div class="running-server-card">
+      <div class="running-server-info">
+        <span class="status-dot ${p.state?.kind === "loaded" ? "connected" : "disconnected"}"></span>
+        <span class="running-server-model">${escapeHtml(p.id)}</span>
+        <span class="running-server-port">router</span>
+      </div>
+      <div class="running-server-actions">
+        ${opencodeAddButtons(p.id, p.id, "", routerApiBase())}
+      </div>
+    </div>`;
+  }).join("");
+
+  const serverCards = ready.map((srv) => {
     // Extract model filename from path for the model ID
     const parts = srv.model.split("/");
     const modelId = parts[parts.length - 1] || srv.name;
@@ -1371,11 +1469,12 @@ function renderOpencodeRunningServers() {
         <span class="running-server-port">port ${srv.port}</span>
       </div>
       <div class="running-server-actions">
-        <button class="primary-btn oc-add-btn" data-port="${srv.port}" data-model-id="${escapeHtml(modelId)}" data-name="${escapeHtml(displayName)}" style="font-size:0.75rem;padding:0.3rem 0.6rem">Add to opencode</button>
-        <button class="open-btn oc-fav-btn" data-port="${srv.port}" data-model-id="${escapeHtml(modelId)}" data-name="${escapeHtml(displayName)}" style="font-size:0.75rem;padding:0.3rem 0.6rem">Add as favourite</button>
+        ${opencodeAddButtons(modelId, displayName, srv.port, "")}
       </div>
     </div>`;
   }).join("");
+
+  container.innerHTML = presetCards + serverCards;
 
   container.querySelectorAll(".oc-add-btn").forEach((btn) => {
     btn.addEventListener("click", () => addToOpencode(btn, false));
@@ -1386,14 +1485,16 @@ function renderOpencodeRunningServers() {
 }
 
 async function addToOpencode(btn, favourite) {
-  const port = parseInt(btn.dataset.port);
+  const port = btn.dataset.port ? parseInt(btn.dataset.port, 10) : 0;
   const modelId = btn.dataset.modelId;
   const displayName = btn.dataset.name;
+  const baseUrl = btn.dataset.baseUrl || "";
 
   // Try to get context size from the server, default to 32768
   let context = 32768;
+  const propsUrl = baseUrl ? baseUrl.replace(/\/v1$/, "") : `http://localhost:${port}`;
   try {
-    const props = await invoke("get_props", { url: `http://localhost:${port}` });
+    const props = await invoke("get_props", { url: propsUrl });
     const dg = props?.default_generation_settings || {};
     if (dg.n_ctx && dg.n_ctx > 0) context = dg.n_ctx;
   } catch { /* use default */ }
@@ -1406,6 +1507,7 @@ async function addToOpencode(btn, favourite) {
       context,
       output: 8192,
       favourite,
+      baseUrl: baseUrl || null,
     });
     btn.textContent = favourite ? "Favourited!" : "Added!";
     btn.disabled = true;

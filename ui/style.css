@@ -520,6 +520,7 @@ input[type="checkbox"] {
 .danger-btn:hover {
   background: rgba(239, 68, 68, 0.15);
 }
+.danger-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* Running server cards */
 .running-server-card {

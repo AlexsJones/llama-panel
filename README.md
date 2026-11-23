@@ -70,7 +70,9 @@ Configure llama-server options from the Server tab. Settings apply when starting
 
 ### Router mode
 
-If you already run `llama-server` in [router mode](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md#using-multiple-models), set its URL (e.g. `http://127.0.0.1:8080`) as the **Router Endpoint** on the Server tab. llama-panel then becomes a client of that server. The Models tab lists its presets and loads or unloads them through `/models/load` and `/models/unload`, and llama-panel starts no `llama-server` of its own. Each preset shows its state from the router: loaded, idle (sleeping), a spinner while loading, or an error with the exit code if its process failed. The list refreshes every 5 seconds.
+If you already run `llama-server` in [router mode](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md#using-multiple-models), set its URL (e.g. `http://127.0.0.1:8080`) as the **Router Endpoint** on the Server tab. llama-panel then becomes a client of that server. The Models tab lists its presets and loads or unloads them through the existing `load_model` / `unload_model` commands (`POST /models/load` and `POST /models/unload`), and llama-panel starts no `llama-server` of its own. Each preset shows its state from the router: loaded, idle (sleeping), a spinner while loading, or an error with the exit code if its process failed. The list refreshes every 5 seconds. A Load or Unload that is still in flight stays disabled across that refresh.
+
+The Playground connects to the same endpoint and sends the selected preset id as the `model` field on both `/completion` and `/v1/chat/completions`. Adding a preset to OpenCode stores that same id in `opencode.json` and points the llama.cpp provider at the router's `/v1` URL, so OpenCode includes `model` on its requests too.
 
 The setting is saved to `~/.config/llama-panel/settings.json`. Clear it to go back to managing servers locally.
 

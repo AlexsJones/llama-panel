@@ -160,6 +160,10 @@
                 <button class="mode-btn" data-mode="completion">Completion</button>
                 <button class="mode-btn active" data-mode="chat">Chat</button>
               </div>
+              <div id="playground-model-row" class="param-row" style="display:none">
+                <label for="playground-model">Model</label>
+                <select id="playground-model" class="param-val wide-input"></select>
+              </div>
               <textarea id="prompt-input" placeholder="Enter your prompt here..."></textarea>
               <div id="chat-system-row">
                 <label for="system-prompt">System prompt</label>
@@ -269,7 +273,7 @@
         <div class="card wide">
           <h2>Opencode</h2>
           <p class="muted" style="margin-bottom: 0.75rem">
-            Add running models to your <a href="https://opencode.ai" target="_blank" style="color:var(--accent)">opencode</a> config so you can use them as coding assistants.
+            Add running models, or router presets, to your <a href="https://opencode.ai" target="_blank" style="color:var(--accent)">opencode</a> config. In router mode the preset id is written as the model id, which OpenCode sends as the <code>model</code> parameter.
           </p>
 
           <!-- Add from running servers -->
